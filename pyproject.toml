@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "syntaxlens"
+dynamic = ["version"]
+description = "Multi-input syntactical analyzer: checks a single line, a code block or a whole file for syntax errors."
+readme = "README.md"
+requires-python = ">=3.10"
+# The analysis engine uses only the Python standard library.
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Education",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+syntaxlens = "syntaxlens.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "syntaxlens.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["syntaxlens*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# Sample and test-data files contain deliberate syntax errors.
+extend-exclude = ["samples", "tests/data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
