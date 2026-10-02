@@ -155,7 +155,7 @@ remaining phases are compressed.
 | Date | Phase | Output |
 |---|---|---|
 | Sep 29 – Oct 2 | 1 | ✔ Project setup, CI, input loading, language detection, lexer for Python and Java, token categories |
-| Sat Oct 3 | 2 | Statement builder, the 8 checks for Python and Java, error recovery; both spec examples pass |
+| Oct 2 | 2 | ✔ Statement builder, the 8 checks for Python and Java, error recovery; both spec examples reproduced exactly (done a day early) |
 | Sun Oct 4 | 3–4 | C, C++, C#, JavaScript; report formatter and CLI (all three input modes) |
 | Mon Oct 5 | 5 | Web app |
 | Tue Oct 6 | 6 | Hardening, Windows `.exe`, one-click launcher; **code freeze**; test run on the presentation laptop |
