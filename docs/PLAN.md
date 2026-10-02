@@ -149,23 +149,27 @@ implements at least one rule in it.
 
 ## 8. Schedule
 
+Revised on Oct 2: Phase 1 finished three days later than first planned, so the
+remaining phases are compressed.
+
 | Date | Phase | Output |
 |---|---|---|
-| Tue Sep 29 | 1 | Project setup, CI, input loading, lexer for Python and Java, token categories |
-| Wed Sep 30 | 2 | Statement builder, the 8 checks for Python and Java, error recovery; both spec examples pass |
-| Thu Oct 1 | 3 | C, C++, C#, JavaScript; language auto-detection; accuracy test sets |
-| Fri Oct 2 | 4 | Report formatter and CLI (all three input modes) |
-| Sat Oct 3 | 5 | Web app |
-| Sun Oct 4 | 6 | Hardening, Windows `.exe`, one-click launcher; **code freeze**; test run on the presentation laptop |
-| Mon Oct 5 | 7 | README, User Manual (PDF + DOCX), technical documentation |
-| Tue Oct 6 | 8 | Demo video |
-| Oct 7–8 | — | Defense practice |
-| ~Oct 9 | — | Submission and oral defense (date to be confirmed) |
+| Sep 29 – Oct 2 | 1 | ✔ Project setup, CI, input loading, language detection, lexer for Python and Java, token categories |
+| Sat Oct 3 | 2 | Statement builder, the 8 checks for Python and Java, error recovery; both spec examples pass |
+| Sun Oct 4 | 3–4 | C, C++, C#, JavaScript; report formatter and CLI (all three input modes) |
+| Mon Oct 5 | 5 | Web app |
+| Tue Oct 6 | 6 | Hardening, Windows `.exe`, one-click launcher; **code freeze**; test run on the presentation laptop |
+| Wed Oct 7 | 7–8 | User Manual (PDF + DOCX); record the demo video |
+| Thu Oct 8 | — | Defense practice |
+| ~Fri Oct 9 | — | Submission and oral defense (date to be confirmed) |
+
+If time runs short, the depth of C, C++, C# and JavaScript support is reduced
+first; Python and Java stay complete.
 
 ## 9. Risks
 
 | Risk | Mitigation |
 |---|---|
 | False errors on valid code | Zero-error requirement on the valid-code set, checked on every push. A construct the analyzer does not understand is not flagged |
-| The presentation laptop fails on the day | No-install `.exe`; all web files bundled (no internet needed); test run on Oct 4; the CLI and the recorded video as backups |
+| The presentation laptop fails on the day | No-install `.exe`; all web files bundled (no internet needed); test run on Oct 6; the CLI and the recorded video as backups |
 | Six languages is a wide scope | Python and Java are completed first; the depth of the other languages is the first thing reduced if time runs short |
