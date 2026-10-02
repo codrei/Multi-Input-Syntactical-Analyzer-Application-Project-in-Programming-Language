@@ -93,7 +93,7 @@ def from_text(text: str, name: str = "<input>") -> Source:
     size = len(text.encode("utf-8", errors="replace"))
     if size > MAX_INPUT_BYTES:
         raise InputError(f"The input is {_size(size)}; the limit is {_size(MAX_INPUT_BYTES)}.")
-    text = text.removeprefix("﻿")  # a byte-order mark copied along with the code
+    text = text.removeprefix("\ufeff")  # a byte-order mark copied along with the code
     text, style = _normalize_newlines(text)
     return Source(text=text, name=name, newline_style=style)
 

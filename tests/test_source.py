@@ -45,7 +45,7 @@ def test_utf8_byte_order_mark_is_removed():
 
 
 def test_pasted_byte_order_mark_is_removed():
-    assert from_text("﻿x = 1").text == "x = 1"
+    assert from_text("\ufeffx = 1").text == "x = 1"
 
 
 def test_utf16_file_with_bom_is_decoded():
