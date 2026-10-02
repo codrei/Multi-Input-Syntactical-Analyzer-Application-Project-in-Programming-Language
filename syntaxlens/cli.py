@@ -1,15 +1,16 @@
 """Command-line interface.
 
-Phase 1 provides the ``tokens`` command, which shows the lexer's output:
-every token with its category, then totals per category.  It already accepts
-all three input modes:
+One command per input mode prints the SYNTACTICAL ANALYSIS REPORT:
 
-    python -m syntaxlens tokens --line "y = 20 + * 5"        (mode 1: single line)
-    python -m syntaxlens tokens --stdin < snippet.txt        (mode 2: code block)
-    python -m syntaxlens tokens samples/spec_example_1.py    (mode 3: file)
+    python -m syntaxlens line "x = 10"                      (mode 1: single line)
+    python -m syntaxlens block                              (mode 2: code block)
+    python -m syntaxlens file samples/spec_example_2.py     (mode 3: file)
 
-The full analysis commands (``line``, ``block``, ``file`` and ``web``) come in
-Phase 4.  Exit codes: 0 = success, 2 = the input could not be analyzed.
+``tokens`` shows the lexer's output instead: every token with its category,
+then totals per category.  It accepts the same three kinds of input.
+
+Exit codes: 0 = no syntax errors, 1 = syntax errors found, 2 = the input
+could not be analyzed (missing, empty or binary file).
 """
 
 from __future__ import annotations
@@ -18,14 +19,19 @@ import argparse
 import sys
 
 from . import __version__
+from .analyzer import analyze
 from .detect import detect_language
 from .lexer import tokenize
 from .profiles import PROFILES
-from .report.text import format_token_listing
+from .report.text import format_report, format_token_listing
 from .source import InputError, Source, from_file, from_text
 
 EXIT_OK = 0
+EXIT_ERRORS_FOUND = 1
 EXIT_BAD_INPUT = 2
+
+#: A line holding only this ends a code block typed into ``syntaxlens block``.
+BLOCK_END_MARKER = "."
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -50,6 +56,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"SyntaxLens {__version__}")
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
+    language = argparse.ArgumentParser(add_help=False)
+    language.add_argument(
+        "--lang",
+        choices=["auto", *PROFILES],
+        default="auto",
+        help="language rules to apply (default: auto-detect)",
+    )
+
+    line = commands.add_parser(
+        "line", parents=[language], help="analyze a single line of code (input mode 1)"
+    )
+    line.add_argument("code", help='the code, in quotes, e.g. "x = 10"')
+    line.set_defaults(handler=_run_analysis, mode="line")
+
+    block = commands.add_parser(
+        "block", parents=[language], help="analyze a block of code typed or pasted (input mode 2)"
+    )
+    block.set_defaults(handler=_run_analysis, mode="block")
+
+    file = commands.add_parser(
+        "file", parents=[language], help="analyze a source file (input mode 3)"
+    )
+    file.add_argument("path", help="file to analyze: .py, .java, .txt, ...")
+    file.set_defaults(handler=_run_analysis, mode="file")
 
     tokens = commands.add_parser(
         "tokens",
@@ -72,6 +102,33 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     tokens.set_defaults(handler=_run_tokens)
     return parser
+
+
+def _run_analysis(args: argparse.Namespace) -> int:
+    if args.mode == "line":
+        source = from_text(args.code, name="<single line>")
+    elif args.mode == "block":
+        source = from_text(_read_block(), name="<code block>")
+    else:
+        source = from_file(args.path)
+    if source.is_blank:
+        raise InputError(f"{source.name} is empty: there is no code to analyze.")
+    result = analyze(source, args.lang)
+    print(format_report(result))
+    return EXIT_OK if result.passed else EXIT_ERRORS_FOUND
+
+
+def _read_block() -> str:
+    """Read lines until a line holding only '.' or the end of input (Ctrl+Z / Ctrl+D)."""
+    if sys.stdin.isatty():
+        print("Type or paste your code. End with a line containing only '.'")
+        print("(or press Ctrl+Z then Enter on Windows, Ctrl+D on macOS/Linux).")
+    lines = []
+    for line in sys.stdin:
+        if line.rstrip("\r\n") == BLOCK_END_MARKER:
+            break
+        lines.append(line)
+    return "".join(lines)
 
 
 def _run_tokens(args: argparse.Namespace) -> int:

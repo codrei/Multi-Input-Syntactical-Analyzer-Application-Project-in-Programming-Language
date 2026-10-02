@@ -1,7 +1,8 @@
 """Plain-text reports.
 
-Phase 1 provides the token listing used by ``syntaxlens tokens``.  The full
-SYNTACTICAL ANALYSIS REPORT in the spec's format is added in Phase 4.
+* :func:`format_report` - the SYNTACTICAL ANALYSIS REPORT, laid out exactly like
+  the two example reports in the project specification.
+* :func:`format_token_listing` - every token with its category (``syntaxlens tokens``).
 
 The layout uses ASCII characters only, so it displays correctly in every
 Windows console.
@@ -11,7 +12,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from ..analyzer import AnalysisResult
 from ..detect import Detection
+from ..diagnostics import Diagnostic
 from ..lexer import LexResult
 from ..source import Source
 from ..tokens import Token, group_by_category
@@ -19,6 +22,88 @@ from ..tokens import Token, group_by_category
 WIDTH = 60
 HEAVY_RULE = "=" * WIDTH
 LIGHT_RULE = "-" * WIDTH
+
+
+def format_report(result: AnalysisResult) -> str:
+    """The SYNTACTICAL ANALYSIS REPORT in the specification's format.
+
+    Valid code gets a line-by-line breakdown (spec Example 1); code with errors
+    gets the list of errors (spec Example 2).  Warnings, if any, follow.
+    """
+    source = result.source
+    errors, warnings = result.errors, result.warnings
+    lines = [HEAVY_RULE, _centered("SYNTACTICAL ANALYSIS REPORT"), HEAVY_RULE]
+    if result.passed:
+        extra = f", {_plural(len(warnings), 'Warning')}" if warnings else ""
+        lines.append(f"Status: PASSED (0 Syntax Errors Found{extra})")
+    else:
+        lines.append(f"Status: FAILED ({_plural(len(errors), 'Syntax Error')} Detected)")
+    lines += [
+        f"Total Lines Analyzed: {source.line_count}",
+        f"Target Syntax Rule: {result.detection.description}",
+        "",
+    ]
+
+    if result.passed:
+        lines += ["LINE BREAKDOWN & SYNTAX CHECK:", LIGHT_RULE]
+        for line in result.lines:
+            if line.label is None:
+                continue                                   # blank line
+            verdict = "WARNING" if line.diagnostics else "OK"
+            lines += [
+                f"Line {line.number}: [{line.text.strip()}]",
+                f"  - Syntax Check: {line.label} -> {verdict}",
+                f"  - Delimiters: {line.delimiters}",
+                "",
+            ]
+        lines += _warning_section(warnings, result)
+        lines += [
+            LIGHT_RULE,
+            "SUMMARY:",
+            f"  - Total Tokens Parsed: {result.token_count}",
+            "  - Delimiter Balance: OK",
+            "  - Syntax Validation: SUCCESSFUL",
+        ]
+    else:
+        lines += ["SYNTAX ERROR DETAILS:", LIGHT_RULE]
+        for number, error in enumerate(errors, start=1):
+            lines += _entry("ERROR", number, error, result)
+        lines += _warning_section(warnings, result)
+        flagged = result.flagged_lines
+        which = ", ".join(str(n) for n in flagged)
+        lines += [
+            LIGHT_RULE,
+            "SUMMARY:",
+            f"  - Total Lines Checked: {source.line_count}",
+            f"  - Valid Lines: {source.line_count - len(flagged)}",
+            f"  - Flagged Lines: {len(flagged)} ({'Lines' if len(flagged) > 1 else 'Line'} {which})",
+            "  - Action Required: Correct highlighted syntax errors above.",
+        ]
+    lines.append(HEAVY_RULE)
+    return "\n".join(lines)
+
+
+def _entry(kind: str, number: int, diagnostic: Diagnostic, result: AnalysisResult) -> list[str]:
+    code_line = result.source.line_text(diagnostic.line).strip()
+    return [
+        f"[{kind} {number}] Line {diagnostic.line}: {code_line}",
+        f"  - Category: {diagnostic.category}",
+        f"  - Details: {diagnostic.message}",
+        "",
+    ]
+
+
+def _warning_section(warnings: list[Diagnostic], result: AnalysisResult) -> list[str]:
+    if not warnings:
+        return []
+    lines = [LIGHT_RULE, "WARNINGS (valid code that is probably a mistake):", LIGHT_RULE]
+    for number, warning in enumerate(warnings, start=1):
+        lines += _entry("WARNING", number, warning, result)
+    return lines
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def format_token_listing(source: Source, detection: Detection, result: LexResult) -> str:

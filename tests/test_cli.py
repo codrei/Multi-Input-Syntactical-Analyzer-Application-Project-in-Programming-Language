@@ -69,3 +69,37 @@ def test_runs_as_python_dash_m():
     )
     assert result.returncode == 0
     assert result.stdout.startswith("SyntaxLens ")
+
+
+def test_file_mode_reports_errors_with_exit_code_1(capsys):
+    assert main(["file", str(SAMPLES / "spec_example_2.py")]) == 1
+    out = capsys.readouterr().out
+    assert "Status: FAILED (3 Syntax Errors Detected)" in out
+
+
+def test_file_mode_valid_code_exits_0(capsys):
+    assert main(["file", str(SAMPLES / "spec_example_1.py")]) == 0
+    assert "Syntax Validation: SUCCESSFUL" in capsys.readouterr().out
+
+
+def test_line_mode(capsys):
+    assert main(["line", "y = 20 + * 5"]) == 1
+    out = capsys.readouterr().out
+    assert "Category: Invalid Operator Sequence" in out
+    assert main(["line", 'System.out.println("Hello");']) == 0
+    assert "Java (auto-detected from the code)" in capsys.readouterr().out
+
+
+def test_block_mode_stops_at_a_lone_dot(monkeypatch, capsys):
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO("x = 10\nif x > 5\n    print(x)\n.\nignored(\n"))
+    assert main(["block"]) == 1
+    out = capsys.readouterr().out
+    assert "Missing colon ':'" in out
+    assert "Total Lines Analyzed: 3" in out
+
+
+def test_language_can_be_forced(capsys):
+    assert main(["line", "x = 10", "--lang", "java"]) == 1
+    assert "Missing semicolon" in capsys.readouterr().out
