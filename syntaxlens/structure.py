@@ -231,8 +231,11 @@ def call_name(tokens: list[Token]) -> str | None:
             index += 1
             continue
         break
-    if parts and index < len(tokens) and is_delim(tokens[index], "(") and tokens[-1].text == ")":
-        if find_top(tokens, *ASSIGNMENT_OPS) is None:
+    if parts and index < len(tokens) and is_delim(tokens[index], "("):
+        closes = _skip_group(tokens, index)
+        # print(...) is a call; so is print("hi) whose ')' was swallowed by an open string.
+        if (tokens[-1].text == ")" or closes >= len(tokens) and not is_delim(tokens[-1], ")")) \
+                and find_top(tokens, *ASSIGNMENT_OPS) is None:
             return ".".join(parts)
     return None
 
