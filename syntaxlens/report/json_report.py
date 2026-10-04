@@ -48,6 +48,7 @@ def to_dict(result: AnalysisResult) -> dict:
         "errors_by_check": _check_totals(result),
         "tokens_by_category": [
             {
+                "key": category.name,
                 "category": category.plural,
                 "count": len(tokens),
                 "items": dict(Counter(token.text for token in tokens)),
@@ -70,6 +71,7 @@ def to_dict(result: AnalysisResult) -> dict:
             {
                 "text": token.text,
                 "category": token.category.singular,
+                "category_key": token.category.name,
                 "kind": token.kind.value,
                 "line": token.line,
                 "column": token.col,

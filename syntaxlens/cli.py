@@ -7,7 +7,8 @@ One command per input mode prints the SYNTACTICAL ANALYSIS REPORT:
     python -m syntaxlens file samples/spec_example_2.py     (mode 3: one or more files)
 
 Running ``python -m syntaxlens`` with no command opens an interactive menu
-(see menu.py).  ``tokens`` shows the lexer's output instead of the report.
+(see menu.py), and ``python -m syntaxlens web`` opens the web app in the
+browser.  ``tokens`` shows the lexer's output instead of the report.
 
 Options shared by the analysis commands:
 
@@ -130,6 +131,11 @@ def _build_parser() -> argparse.ArgumentParser:
     menu = commands.add_parser("menu", help="open the interactive menu")
     menu.set_defaults(handler=lambda args: _run_menu())
 
+    web = commands.add_parser("web", help="open the web app in your browser (works offline)")
+    web.add_argument("--port", type=int, default=8000, help="port to use (default 8000)")
+    web.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    web.set_defaults(handler=_run_web)
+
     tokens = commands.add_parser(
         "tokens", parents=[language],
         help="list every token with its category, then totals per category",
@@ -163,6 +169,12 @@ def _run_menu() -> int:
     from .menu import run_menu
 
     return run_menu()
+
+
+def _run_web(args: argparse.Namespace) -> int:
+    from .web.server import serve
+
+    return serve(port=args.port, open_browser=not args.no_browser)
 
 
 def _run_tokens(args: argparse.Namespace) -> int:

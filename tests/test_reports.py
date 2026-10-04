@@ -99,7 +99,7 @@ def test_json_report(example_2):
         "check": 1, "title": "Delimiter & Bracket Matching", "errors": 1, "warnings": 0,
     }
     assert data["tokens_by_category"][1] == {
-        "category": "Identifiers", "count": 4, "items": {"x": 2, "print": 1, "y": 1},
+        "key": "IDENTIFIER", "category": "Identifiers", "count": 4, "items": {"x": 2, "print": 1, "y": 1},
     }
     assert [line["status"] for line in data["lines"]] == ["ok", "error", "error", "error"]
     assert len(data["tokens"]) == 17
