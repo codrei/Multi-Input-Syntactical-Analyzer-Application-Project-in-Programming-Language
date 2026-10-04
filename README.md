@@ -10,14 +10,57 @@ with its line number, category and explanation.
 
 Languages: **Python** and **Java**, followed by C, C++, C# and JavaScript.
 
-> **Status: Phases 1, 2 and 4 of 8 complete.** All eight syntax checks work for
-> Python and Java, and both example reports from the project specification are
-> reproduced exactly. The command line supports all three input modes, an
-> interactive menu, a detailed report with fix suggestions and per-category
-> totals, and JSON output. Next: more languages and the web app. See the
-> [progress checklist](#progress) and the full [project plan](docs/PLAN.md).
+> **Status: Phases 1, 2, 4 and 5 of 8 complete.** All eight syntax checks work
+> for Python and Java, and both example reports from the project specification
+> are reproduced exactly. SyntaxLens has a **web app** and a **command line**,
+> each supporting all three input modes. Next: more languages and a no-install
+> Windows build. See the [progress checklist](#progress) and the full
+> [project plan](docs/PLAN.md).
 
-## Try it
+![The SyntaxLens web app showing the specification's Example 2](docs/images/web-app.png)
+
+## The web app
+
+The web app has a tab for each input mode: **Single Line**, **Code Block** (an
+editor with line numbers and syntax colors) and **Upload File** (drag and drop
+or browse). After analysis it shows:
+
+- a PASSED / FAILED banner, counts, and bar charts of errors per check and
+  tokens per category;
+- the errors marked inside the code: a red line, a dot in the margin and a
+  wavy underline under the exact token;
+- result tabs: **Errors** (each with a pointer to the column and a fix),
+  **Line Breakdown**, **Tokens** (filterable by category) and **Report** (the
+  detailed or classic text report, with Copy and Download .txt / .json).
+
+It also has a Samples menu, an "Analyze as I type" option, a dark theme, and
+links that open a sample directly, such as `/#sample=spec_example_2`.
+
+To run it on your own computer, without internet:
+
+```bat
+py -m syntaxlens web
+```
+
+This opens the app in your browser at `http://127.0.0.1:8000`. The page runs
+on your computer only. It uses no internet connection and installs nothing:
+the server is Python's built-in WSGI server, and the code editor
+([CodeMirror 5](https://codemirror.net/5/), MIT license) is stored in the
+repository.
+
+### Online on Vercel
+
+The same app runs on [Vercel](https://vercel.com). [`app.py`](app.py) gives
+Vercel the app, and [`vercel.json`](vercel.json) sends every request to it.
+Nothing needs to be installed, because SyntaxLens uses only the standard
+library. To deploy:
+
+1. On vercel.com choose **Add New → Project**, and import this GitHub repository.
+2. Keep the default settings and press **Deploy**.
+
+After that, every push to `main` updates the site automatically.
+
+## The command line
 
 You need Python 3.10 or newer. On Windows, install it from
 [python.org](https://www.python.org/downloads/); the installer adds the `py`
@@ -197,7 +240,7 @@ Mistakes carried over from other languages get specific advice. Examples:
   ④ Structurer  tokens → statements (Python: logical lines; Java: ; { })                   ✔
   ⑤ 8 Checks    independent modules; each error type belongs to exactly one check         ✔
   ⑥ Filter      keep root causes, drop follow-on errors                                   ✔
-  ⑦ Report      result → text report (classic or detailed), JSON, menu                    ✔  (web UI: Phase 5)
+  ⑦ Report      result → text report (classic or detailed), JSON, web app, menu           ✔
 ```
 
 | Stage | Technique | Module |
@@ -235,7 +278,7 @@ py -m pip install -e ".[dev]"
 py -m pytest
 ```
 
-300 automated tests run on Windows and Linux with Python 3.10–3.13 on every push:
+319 automated tests run on Windows and Linux with Python 3.10–3.13 on every push:
 
 - **Specification examples:** both example reports are reproduced exactly.
 - **Every check:** at least one test per error type, in Python and in Java.
@@ -253,7 +296,7 @@ py -m pytest
 - [x] **Phase 2 — Syntax checks:** statement builder, the 8 checks for Python and Java, error recovery, the report in the specification's format; both specification examples reproduced
 - [ ] **Phase 3 — More languages:** C, C++, C#, JavaScript; accuracy measurement
 - [x] **Phase 4 — Report and CLI:** detailed report style with column pointers, fix suggestions and per-category totals; JSON export; save to file; interactive menu; colors in the Windows terminal
-- [ ] **Phase 5 — Web app:** three input tabs, highlighted errors, result tabs with visual counts
+- [x] **Phase 5 — Web app:** three input tabs, errors marked in the code editor, result tabs with charts and counts, report download; runs offline (`py -m syntaxlens web`) and on Vercel
 - [ ] **Phase 6 — Hardening:** Windows `.exe`, one-click launcher
 - [ ] **Phase 7 — Documentation:** User Manual (PDF and DOCX)
 - [ ] **Phase 8 — Demo:** demonstration video and defense preparation
@@ -276,7 +319,12 @@ syntaxlens/          the analyzer
   cli.py               command-line interface
   menu.py              interactive menu (run with no command)
   console.py           terminal colors
+  web/app.py           web server (WSGI, standard library only)
+  web/server.py        runs the web app locally: py -m syntaxlens web
+  web/static/          the page: index.html, styles.css, app.js, CodeMirror editor
+app.py, vercel.json    Vercel deployment
 tests/               automated tests (pytest) and valid sample programs
 samples/             demo inputs, including both specification examples
 docs/PLAN.md         project plan and schedule
+docs/images/         screenshots
 ```
