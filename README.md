@@ -10,11 +10,12 @@ with its line number, category and explanation.
 
 Languages: **Python** and **Java**, followed by C, C++, C# and JavaScript.
 
-> **Status: Phases 1 and 2 of 8 complete.** All eight syntax checks work for
+> **Status: Phases 1, 2 and 4 of 8 complete.** All eight syntax checks work for
 > Python and Java, and both example reports from the project specification are
-> reproduced exactly. The command line already supports all three input modes.
-> Next: more languages, then the web app. See the [progress checklist](#progress)
-> and the full [project plan](docs/PLAN.md).
+> reproduced exactly. The command line supports all three input modes, an
+> interactive menu, a detailed report with fix suggestions and per-category
+> totals, and JSON output. Next: more languages and the web app. See the
+> [progress checklist](#progress) and the full [project plan](docs/PLAN.md).
 
 ## Try it
 
@@ -30,18 +31,32 @@ py -m syntaxlens file samples\spec_example_2.py
 
 On macOS or Linux, use `python3` instead of `py` and `/` instead of `\`.
 
+The easiest way in is the interactive menu: run `py -m syntaxlens` and choose
+1, 2 or 3. Each input mode also has its own command:
+
 | Input mode | Command |
 |---|---|
 | 1. Single line | `py -m syntaxlens line "x = 10"` |
 | 2. Code block | `py -m syntaxlens block`, then type or paste the code and finish with a line containing only `.` |
-| 3. File | `py -m syntaxlens file samples\HelloWorld.java` |
+| 3. File | `py -m syntaxlens file samples\HelloWorld.java` (several files at once are allowed) |
+
+Options:
+
+| Option | Effect |
+|---|---|
+| `--style detailed` | the default: error codes, a pointer to the exact column, a suggested fix, a line-by-line breakdown, and totals for each of the 8 checks and 8 token categories |
+| `--style classic` | exactly the layout of the specification's example reports |
+| `--format json` | the full result as JSON data, including every token |
+| `--output FILE` | save the report to a file instead of printing it |
+| `--lang python` / `--lang java` | choose the language instead of detecting it |
+| `--no-color` | plain text; colors are otherwise used in a terminal, and never in saved files |
 
 The language is detected automatically: from the file extension, or for typed
-code, from features typical of each language. Add `--lang python` or
-`--lang java` to choose it yourself. The exit code is 0 when the code is valid,
-1 when syntax errors were found, and 2 when the input could not be read.
+code, from features typical of each language. The exit code is 0 when the code
+is valid, 1 when syntax errors were found, and 2 when the input could not be
+read.
 
-### Example: the specification's Example 2
+### Example: the specification's Example 2 (classic style)
 
 ```
 ============================================================
@@ -86,6 +101,47 @@ SyntaxLens reports only the root cause on each line (see
 [error recovery](#error-recovery)). Example 1 from the specification is also
 reproduced exactly, including its line-by-line breakdown and "Total Tokens
 Parsed: 14".
+
+The default **detailed** style adds, for each error, its code, the check that
+found it, a pointer to the column and a fix:
+
+```
+[ERROR 3] Line 4: y = 20 + * 5
+  - Category: Invalid Operator Sequence
+  - Details: Consecutive binary operators '+ *' without an operand in between.
+  - Location: line 4, column 10 (check 4: Operator Syntax, code E401)
+      4 | y = 20 + * 5
+        |          ^
+  - Fix: Remove one of the operators, or put a value between them.
+```
+
+It also adds a line-by-line breakdown in which each flagged line points to its
+error, and totals per category, as the specification requires ("detailed lists
+of identified items and summary totals for each category"):
+
+```
+ERRORS BY CATEGORY (the 8 syntax checks):
+  1. Delimiter & Bracket Matching ..............   1
+  2. String & Character Literals ...............   1
+  3. Statement Terminators .....................   0
+  4. Operator Syntax ...........................   1
+  5. Control Structure Headers .................   0
+  6. Identifier Naming .........................   0
+  7. Indentation & Block Structure .............   0
+  8. Illegal Characters & Malformed Literals ...   0
+  Total ........................................   3  (0 warnings)
+
+TOKENS BY CATEGORY (the 8 token categories):
+  Keywords ...............   1  if
+  Identifiers ............   4  x (x2), print, y
+  Operators ..............   5  = (x2), >, +, *
+  Numeric Literals .......   4  10, 5 (x2), 20
+  String & Char Literals .   1  "Value is valid)
+  Delimiters .............   2  ( (x2)
+  Comments ...............   0
+  Invalid Tokens .........   0
+  Total Tokens Parsed ....  17
+```
 
 Java works the same way:
 
@@ -141,7 +197,7 @@ Mistakes carried over from other languages get specific advice. Examples:
   ④ Structurer  tokens → statements (Python: logical lines; Java: ; { })                   ✔
   ⑤ 8 Checks    independent modules; each error type belongs to exactly one check         ✔
   ⑥ Filter      keep root causes, drop follow-on errors                                   ✔
-  ⑦ Report      result → text report in the specification's format                       ✔  (web UI: Phase 5)
+  ⑦ Report      result → text report (classic or detailed), JSON, menu                    ✔  (web UI: Phase 5)
 ```
 
 | Stage | Technique | Module |
@@ -179,7 +235,7 @@ py -m pip install -e ".[dev]"
 py -m pytest
 ```
 
-275 automated tests run on Windows and Linux with Python 3.10–3.13 on every push:
+300 automated tests run on Windows and Linux with Python 3.10–3.13 on every push:
 
 - **Specification examples:** both example reports are reproduced exactly.
 - **Every check:** at least one test per error type, in Python and in Java.
@@ -196,7 +252,7 @@ py -m pytest
 - [x] **Phase 1 — Foundation:** project setup, automated testing on Windows and Linux, input loading, language detection, Python and Java lexer, 8 token categories
 - [x] **Phase 2 — Syntax checks:** statement builder, the 8 checks for Python and Java, error recovery, the report in the specification's format; both specification examples reproduced
 - [ ] **Phase 3 — More languages:** C, C++, C#, JavaScript; accuracy measurement
-- [ ] **Phase 4 — Report and CLI:** detailed report style with fix suggestions, per-category totals and JSON export; interactive menu *(the `line`, `block` and `file` commands already work)*
+- [x] **Phase 4 — Report and CLI:** detailed report style with column pointers, fix suggestions and per-category totals; JSON export; save to file; interactive menu; colors in the Windows terminal
 - [ ] **Phase 5 — Web app:** three input tabs, highlighted errors, result tabs with visual counts
 - [ ] **Phase 6 — Hardening:** Windows `.exe`, one-click launcher
 - [ ] **Phase 7 — Documentation:** User Manual (PDF and DOCX)
@@ -214,9 +270,12 @@ syntaxlens/          the analyzer
   expressions.py       the operator/operand state machine used by check 4
   analyzer.py        ⑥ pipeline and follow-on error filter
   diagnostics.py       error model: codes, categories, severity
-  report/text.py     ⑦ reports
+  report/text.py     ⑦ text reports (classic and detailed styles)
+  report/json_report.py  JSON report (also used by the web app)
   profiles/            language rules stored as data (Python, Java)
   cli.py               command-line interface
+  menu.py              interactive menu (run with no command)
+  console.py           terminal colors
 tests/               automated tests (pytest) and valid sample programs
 samples/             demo inputs, including both specification examples
 docs/PLAN.md         project plan and schedule
