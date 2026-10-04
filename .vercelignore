@@ -1,0 +1,6 @@
+# Files Vercel does not need for the web app.
+tests/
+docs/
+.github/
+.venv/
+*.egg-info/

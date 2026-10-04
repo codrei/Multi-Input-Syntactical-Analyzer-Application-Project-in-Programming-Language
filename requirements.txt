@@ -1,0 +1,2 @@
+# SyntaxLens needs only the Python standard library, so there is nothing to install.
+# (This file tells Vercel that no extra packages are required.)
