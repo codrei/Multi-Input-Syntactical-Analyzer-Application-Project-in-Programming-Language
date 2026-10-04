@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SyntaxLens - Multi-Input Syntactical Analyzer</title>
+  <meta name="description" content="Check Python and Java code for syntax errors: type a line, paste a block or upload a file.">
+  <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="static/vendor/codemirror/codemirror.min.css">
+  <link rel="stylesheet" href="static/styles.css">
+  <script>
+    // Apply the saved (or system) theme before the page is drawn, so it never flashes.
+    try {
+      const saved = localStorage.getItem("syntaxlens-theme");
+      const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    } catch (e) { document.documentElement.dataset.theme = "light"; }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="13" cy="13" r="9" fill="none" stroke="currentColor" stroke-width="3"/>
+        <path d="M20 20l8 8" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M9 10l-2.5 3L9 16M17 10l2.5 3L17 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <h1>SyntaxLens</h1>
+        <p>Multi-Input Syntactical Analyzer</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="select-label">Language
+        <select id="language" aria-label="Language rules">
+          <option value="auto">Auto-detect</option>
+        </select>
+      </label>
+      <button id="theme-toggle" class="icon-button" type="button" aria-label="Switch between light and dark theme" title="Light / dark theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ============================ INPUT ============================ -->
+    <section class="panel" aria-labelledby="input-title">
+      <div class="panel-head">
+        <h2 id="input-title">Input</h2>
+        <span class="muted">Choose one of the three input modes</span>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Input mode">
+        <button class="tab" role="tab" id="tab-line" aria-controls="pane-line" aria-selected="true" data-mode="line">
+          <span class="tab-number">1</span> Single Line
+        </button>
+        <button class="tab" role="tab" id="tab-block" aria-controls="pane-block" aria-selected="false" data-mode="block" tabindex="-1">
+          <span class="tab-number">2</span> Code Block
+        </button>
+        <button class="tab" role="tab" id="tab-file" aria-controls="pane-file" aria-selected="false" data-mode="file" tabindex="-1">
+          <span class="tab-number">3</span> Upload File
+        </button>
+      </div>
+
+      <div class="pane" role="tabpanel" id="pane-line" aria-labelledby="tab-line">
+        <p class="pane-help">Type or paste one statement and press <kbd>Enter</kbd>.</p>
+        <div class="line-row">
+          <input id="line-code" class="code-input" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="x = 10" aria-label="One line of code">
+          <button class="button primary" type="button" data-analyze>Analyze</button>
+        </div>
+        <div class="examples">
+          <span class="muted">Try:</span>
+          <button class="chip" type="button" data-example="x = 10">x = 10</button>
+          <button class="chip" type="button" data-example="y = 20 + * 5">y = 20 + * 5</button>
+          <button class="chip" type="button" data-example='System.out.println("Hello");'>System.out.println("Hello");</button>
+          <button class="chip" type="button" data-example='System.out.println("Hello")'>System.out.println("Hello")</button>
+          <button class="chip" type="button" data-example="2total = 5">2total = 5</button>
+        </div>
+      </div>
+
+      <div class="pane" role="tabpanel" id="pane-block" aria-labelledby="tab-block" hidden>
+        <div class="toolbar">
+          <select id="sample-select" aria-label="Load a sample">
+            <option value="">Load a sample...</option>
+          </select>
+          <label class="check"><input type="checkbox" id="live"> Analyze as I type</label>
+          <button class="button ghost" type="button" id="clear-block">Clear</button>
+        </div>
+        <textarea id="block-code" aria-label="Code block"></textarea>
+        <div class="actions">
+          <span class="muted"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to analyze</span>
+          <button class="button primary" type="button" data-analyze>Analyze</button>
+        </div>
+      </div>
+
+      <div class="pane" role="tabpanel" id="pane-file" aria-labelledby="tab-file" hidden>
+        <label class="drop-zone" id="drop-zone" for="file-input">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M5 16v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <strong>Drop a source file here</strong>
+          <span class="muted">or click to choose one: .py .java .txt ... up to 2 MB</span>
+          <input id="file-input" type="file" accept=".py,.pyw,.java,.c,.h,.cpp,.cc,.hpp,.cs,.js,.txt">
+        </label>
+        <div class="file-info" id="file-info" hidden></div>
+        <div id="file-view" class="file-view" hidden></div>
+      </div>
+    </section>
+
+    <!-- =========================== RESULTS =========================== -->
+    <section class="panel" aria-labelledby="results-title">
+      <div class="panel-head">
+        <h2 id="results-title">Results</h2>
+        <span class="muted" id="timing"></span>
+      </div>
+
+      <div class="empty-state" id="empty-state">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l-6 7 6 7M15 5l6 7-6 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p><strong>No analysis yet.</strong></p>
+        <p class="muted">Enter code on the left and press <em>Analyze</em>. The code is only read, never run.</p>
+      </div>
+
+      <div class="notice error" id="request-error" role="alert" hidden></div>
+
+      <div id="results" hidden aria-live="polite">
+        <div class="status" id="status"></div>
+        <div class="stats" id="stats"></div>
+
+        <div class="charts">
+          <div class="chart">
+            <h3>Errors by check</h3>
+            <div id="chart-checks"></div>
+          </div>
+          <div class="chart">
+            <h3>Tokens by category</h3>
+            <div id="chart-tokens"></div>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Result views">
+          <button class="tab" role="tab" id="rtab-errors" aria-controls="rpane-errors" aria-selected="true" data-view="errors">Errors <span class="count" id="count-errors"></span></button>
+          <button class="tab" role="tab" id="rtab-lines" aria-controls="rpane-lines" aria-selected="false" data-view="lines" tabindex="-1">Line Breakdown</button>
+          <button class="tab" role="tab" id="rtab-tokens" aria-controls="rpane-tokens" aria-selected="false" data-view="tokens" tabindex="-1">Tokens <span class="count" id="count-tokens"></span></button>
+          <button class="tab" role="tab" id="rtab-report" aria-controls="rpane-report" aria-selected="false" data-view="report" tabindex="-1">Report</button>
+        </div>
+
+        <div class="pane" role="tabpanel" id="rpane-errors" aria-labelledby="rtab-errors"></div>
+        <div class="pane" role="tabpanel" id="rpane-lines" aria-labelledby="rtab-lines" hidden>
+          <div class="table-wrap"><table class="table" id="lines-table"></table></div>
+        </div>
+        <div class="pane" role="tabpanel" id="rpane-tokens" aria-labelledby="rtab-tokens" hidden>
+          <div class="filters" id="token-filters"></div>
+          <div class="table-wrap"><table class="table" id="tokens-table"></table></div>
+        </div>
+        <div class="pane" role="tabpanel" id="rpane-report" aria-labelledby="rtab-report" hidden>
+          <div class="toolbar">
+            <div class="segmented" role="group" aria-label="Report style">
+              <button type="button" data-style="detailed" aria-pressed="true">Detailed</button>
+              <button type="button" data-style="classic" aria-pressed="false">Classic (spec format)</button>
+            </div>
+            <span class="spacer"></span>
+            <button class="button ghost" type="button" id="copy-report">Copy</button>
+            <button class="button ghost" type="button" id="download-txt">Download .txt</button>
+            <button class="button ghost" type="button" id="download-json">Download .json</button>
+          </div>
+          <pre class="report" id="report-text"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>SyntaxLens <span id="version"></span></span>
+    <span>Static analysis only: your code is never run.</span>
+    <a href="https://github.com/codrei/Multi-Input-Syntactical-Analyzer-Application-Project-in-Programming-Language">Source on GitHub</a>
+  </footer>
+
+  <script src="static/vendor/codemirror/codemirror.min.js"></script>
+  <script src="static/vendor/codemirror/python.min.js"></script>
+  <script src="static/vendor/codemirror/clike.min.js"></script>
+  <script src="static/vendor/codemirror/matchbrackets.min.js"></script>
+  <script src="static/vendor/codemirror/active-line.min.js"></script>
+  <script src="static/vendor/codemirror/placeholder.min.js"></script>
+  <script src="static/app.js"></script>
+</body>
+</html>
