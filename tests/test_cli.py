@@ -103,3 +103,41 @@ def test_block_mode_stops_at_a_lone_dot(monkeypatch, capsys):
 def test_language_can_be_forced(capsys):
     assert main(["line", "x = 10", "--lang", "java"]) == 1
     assert "Missing semicolon" in capsys.readouterr().out
+
+
+def test_detailed_style_is_the_default(capsys):
+    main(["file", str(SAMPLES / "spec_example_2.py")])
+    out = capsys.readouterr().out
+    assert "  - Fix: Add the missing ')'." in out
+    assert "ERRORS BY CATEGORY (the 8 syntax checks):" in out
+
+
+def test_classic_style_matches_the_specification(capsys):
+    from tests.test_spec_examples import EXAMPLE_2_REPORT
+
+    main(["file", str(SAMPLES / "spec_example_2.py"), "--style", "classic"])
+    assert capsys.readouterr().out == EXAMPLE_2_REPORT + "\n"
+
+
+def test_json_format(capsys):
+    import json
+
+    assert main(["line", "x = 5 +", "--format", "json"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["diagnostics"][0]["code"] == "E402"
+
+
+def test_several_files_and_exit_code(capsys):
+    files = [str(SAMPLES / "spec_example_1.py"), str(SAMPLES / "HelloWorld.java")]
+    assert main(["file", *files]) == 0
+    assert capsys.readouterr().out.count("SYNTACTICAL ANALYSIS REPORT") == 2
+    assert main(["file", *files, str(SAMPLES / "spec_example_2.py")]) == 1
+
+
+def test_output_file(tmp_path, capsys):
+    target = tmp_path / "report.txt"
+    assert main(["file", str(SAMPLES / "spec_example_2.py"), "--output", str(target)]) == 1
+    assert "Report saved to" in capsys.readouterr().out
+    saved = target.read_text(encoding="utf-8")
+    assert saved.startswith("====")
+    assert "\033[" not in saved                       # no color codes in files
