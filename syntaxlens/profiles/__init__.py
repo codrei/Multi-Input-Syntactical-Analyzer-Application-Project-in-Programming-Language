@@ -1,7 +1,7 @@
 """Registry of the languages SyntaxLens can analyze."""
 
 from .base import LanguageProfile
-from .cfamily import C, CPP, CSHARP, JAVA
+from .cfamily import CPP, CSHARP, JAVA, C
 from .python import PYTHON
 
 #: Every supported language, keyed by the id used on the command line and in the web app.

@@ -54,7 +54,13 @@ def test_nothing_outside_the_static_folder_is_served(path):
 def test_info_and_samples():
     _, _, content = request("GET", "/api/info")
     info = json.loads(content)
-    assert {language["key"] for language in info["languages"]} == {"python", "java"}
+    assert {language["key"] for language in info["languages"]} == {
+    "python",
+    "java",
+    "c",
+    "cpp",
+    "csharp",
+}
     _, _, content = request("GET", "/api/samples")
     ids = [sample["id"] for sample in json.loads(content)["samples"]]
     assert ids[:2] == ["spec_example_1", "spec_example_2"]
