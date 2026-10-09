@@ -12,6 +12,10 @@ check, so the same mistake is never reported twice.
     6 identifiers  names follow the naming rules and are not reserved words
     7 blocks       indentation (Python) and block pairing (else needs an if, ...)
     8 lexical      illegal characters, malformed numbers, unclosed comments
+
+Where languages differ, the check never asks which language it is.  It reads the
+``LanguageRules`` of the profile (``profiles/rules.py``) and, when the behavior itself differs,
+picks a handler from a small table (for example ``_DISCARDED_VALUE`` in ``operators.py``).
 """
 
 from __future__ import annotations

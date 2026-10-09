@@ -5,6 +5,7 @@ and are added in Phase 3.
 """
 
 from .base import LanguageProfile
+from .rules import DISCARDED_VALUE_WARNING, LanguageRules
 
 # Reserved words from the Java Language Specification (JLS 17, section 3.9),
 # plus the literals true, false and null, which are also reserved.
@@ -63,6 +64,13 @@ JAVA = LanguageProfile(
     line_continuation=False,
     name_pattern=r"(?:[^\W\d]|\$)(?:\w|\$)*",  # Java also allows "$" in names
     number_pattern=JAVA_NUMBER,
+    rules=LanguageRules(
+        # 'x + 1;' is "not a statement"; calls, ++/--, 'new', this.f() and lambdas are fine.
+        self_reference_statements=True,
+        arrow_statements="->",
+        call_operators=frozenset({"->"}),
+        parameter_modifiers=frozenset({"final"}),
+    ),
 )
 
 # ---------------------------------------------------------------------------
@@ -134,6 +142,14 @@ C = LanguageProfile(
     line_continuation=True,  # a trailing backslash continues a line (macros)
     name_pattern=r"[^\W\d]\w*",
     number_pattern=_number("", _C_INT_SUFFIX, _C_FLOAT_SUFFIX),
+    rules=LanguageRules(
+        preprocessor_lines=True,
+        discarded_value=DISCARDED_VALUE_WARNING,   # 'x + 1;' is legal C
+        call_operators=frozenset({"->"}),
+        void_parameter=True,
+        variadic_parameter=True,
+        parameter_names_optional=True,
+    ),
 )
 
 # ---------------------------------------------------------------------------
@@ -183,6 +199,17 @@ CPP = LanguageProfile(
     line_continuation=True,
     name_pattern=r"[^\W\d]\w*",
     number_pattern=_number("'", _C_INT_SUFFIX, _C_FLOAT_SUFFIX),  # 1'000'000 (C++14)
+    rules=LanguageRules(
+        preprocessor_lines=True,
+        access_labels=True,
+        stream_chains=True,
+        discarded_value=DISCARDED_VALUE_WARNING,
+        generic_arguments=True,
+        call_operators=frozenset({"->"}),
+        void_parameter=True,
+        variadic_parameter=True,
+        parameter_names_optional=True,
+    ),
 )
 
 # ---------------------------------------------------------------------------
@@ -229,4 +256,14 @@ CSHARP = LanguageProfile(
     line_continuation=False,
     name_pattern=r"@?[^\W\d]\w*",  # @class lets a keyword be used as a name
     number_pattern=_number("_", r"(?:[uU][lL]?|[lL][uU]?|[fFdDmM])?", r"[fFdDmM]?"),
+    rules=LanguageRules(
+        preprocessor_lines=True,                   # #region, #if, #nullable
+        contextual_modifiers=frozenset({"async", "partial", "required", "global"}),
+        await_prefix=True,
+        # 'x + 1;' is "not a statement"; calls, ++/--, 'new', 'await' and accessors are fine.
+        generic_arguments=True,
+        call_operators=frozenset({"->", "?.", "!"}),
+        accessor_names=frozenset({"get", "set", "init", "add", "remove"}),
+        parameter_modifiers=frozenset({"ref", "out", "in", "params", "this"}),
+    ),
 )

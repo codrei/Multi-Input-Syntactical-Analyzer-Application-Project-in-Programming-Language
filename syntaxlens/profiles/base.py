@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .rules import LanguageRules
+
 
 @dataclass(frozen=True)
 class LanguageProfile:
@@ -32,3 +34,4 @@ class LanguageProfile:
     line_continuation: bool                # may a backslash at a line's end join two lines?
     name_pattern: str                      # regex for identifiers
     number_pattern: str                    # regex for valid numeric literals
+    rules: LanguageRules = LanguageRules() # what the language allows (see rules.py)

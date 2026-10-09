@@ -30,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .lexer import LexResult
+from .profiles.rules import LanguageRules
 from .source import Source
 from .tokens import Token, TokenKind
 
@@ -463,9 +464,8 @@ class _CBuilder:
 
     def __init__(self, code: list[Token], lex: LexResult):
         self.code = code
-        self.lang = lex.profile.key
+        self.rules = lex.profile.rules
         self.continued = lex.continued_lines
-        self.directives = "#" in lex.profile.delimiters   # C, C++ and C# have '#' lines
         self.statements: list[Statement] = []
         self.current: list[Token] = []
         self.depth = 0                  # open ( and [ in the current statement
@@ -478,7 +478,7 @@ class _CBuilder:
             return
         statement = Statement(len(self.statements), self.current, ended_by=ended_by,
                               missing_terminator=missing)
-        _classify_c(statement, self.lang)
+        _classify_c(statement, self.rules)
         if self.last_closed in ("struct", "union", "enum", "class", "typedef") \
                 and ended_by == ";" and statement.kind == "expression":
             statement.kind = "declaration"             # struct P { ... } p;   typedef struct { ... } T;
@@ -503,7 +503,7 @@ class _CBuilder:
         """
         code = self.code
         token = code[index]
-        if not (self.directives and is_delim(token, "#")):
+        if not (self.rules.preprocessor_lines and is_delim(token, "#")):
             return None
         if index and code[index - 1].end_line >= token.line:
             return None                                  # '#' in the middle of a line
@@ -546,13 +546,13 @@ class _CBuilder:
             if new_line and self.depth == 0 and current[0].text in ("case", "default") \
                     and ends_value(current[-1]) and _c_starts(code, index):
                 self.emit("line")                                # a label missing its ':'
-            elif new_line and self.depth == 0 and (_c_complete(current) or (
+            elif new_line and self.depth == 0 and (_c_complete(current, self.rules) or (
                 do_while_tail and _c_complete_header(current)
             )) and _c_starts(code, index):
                 self.emit("line", missing=True)                 # a ';' is missing
             elif new_line and self.depth > 0 and ends_value(current[-1]) and _c_starts(code, index) \
                     and not _in_for_header(current):
-                self.emit("line", missing=_c_complete(current))  # a ')' is missing
+                self.emit("line", missing=_c_complete(current, self.rules))  # a ')' is missing
             elif current and self.depth == 0 and _c_complete_header(current) \
                     and token.text not in ("{", ";") \
                     and not (current[-1].text == "else" and token.text == "if") \
@@ -593,7 +593,7 @@ class _CBuilder:
                     self.emit(";")
             elif text == ":" and self.depth == 0 and len(self.current) == 1 \
                     and (self.current[0].kind is TokenKind.IDENTIFIER or (
-                        self.lang == "cpp" and self.current[0].text in ACCESS_LABELS)):
+                        self.rules.access_labels and self.current[0].text in ACCESS_LABELS)):
                 self.current.append(token)                       # a label: "outer:"
                 self.emit(":")
             elif text == ":" and self.depth == 0 and self.current \
@@ -605,7 +605,7 @@ class _CBuilder:
                 self.current.append(token)
             index += 1
         if self.current:
-            self.emit("eof", missing=_c_complete(self.current))
+            self.emit("eof", missing=_c_complete(self.current, self.rules))
         return self.statements
 
 
@@ -613,8 +613,12 @@ def _c_statements(lex: LexResult) -> list[Statement]:
     return _CBuilder(_code_tokens(lex), lex).run()
 
 
-def _strip_prefix(tokens: list[Token]) -> int:
-    """Index of the first token after leading annotations (@Name(...)) and modifiers."""
+def _strip_prefix(tokens: list[Token], rules: LanguageRules = LanguageRules()) -> int:
+    """Index of the first token after leading annotations (@Name(...)) and modifiers.
+
+    ``rules.contextual_modifiers`` are ordinary names that act as modifiers when a type or
+    keyword follows them (C#: ``async Task Run()``, ``partial class``, ``global using``).
+    """
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -628,11 +632,10 @@ def _strip_prefix(tokens: list[Token]) -> int:
             continue
         following = tokens[index + 1] if index + 1 < len(tokens) else None
         if token.kind is TokenKind.IDENTIFIER and following is not None and (
-            (token.text in ("async", "partial", "required") and following.kind in (
-                TokenKind.IDENTIFIER, TokenKind.KEYWORD))
-            or (token.text == "global" and following.text == "using")
+            token.text in rules.contextual_modifiers
+            and following.kind in (TokenKind.IDENTIFIER, TokenKind.KEYWORD)
         ):
-            index += 1                               # C#: async, partial, global using
+            index += 1
             continue
         if token.text == "<" and index > 0:          # generic method: <T> T max(...)
             end = _skip_type_arguments(tokens, index)
@@ -757,7 +760,7 @@ def _classify_using(statement: Statement, tokens: list[Token], start: int) -> No
         statement.kind = "using"      # using System;  using static X;  using A = B;  using namespace std;
 
 
-def _classify_c(statement: Statement, lang: str = "java") -> None:
+def _classify_c(statement: Statement, rules: LanguageRules = LanguageRules()) -> None:
     tokens = statement.code
     if not tokens:
         statement.kind = "empty"
@@ -773,7 +776,7 @@ def _classify_c(statement: Statement, lang: str = "java") -> None:
     ):
         statement.keyword, statement.kind = tokens[0].text, "case"   # a switch label
         return
-    start = _strip_prefix(tokens)
+    start = _strip_prefix(tokens, rules)
     if start >= len(tokens):
         statement.kind = "annotation"
         return
@@ -785,7 +788,7 @@ def _classify_c(statement: Statement, lang: str = "java") -> None:
     if first.kind is TokenKind.KEYWORD and word == "typedef":
         statement.keyword, statement.kind = word, "declaration"
         return
-    if lang == "cpp" and statement.ended_by == ":" and first.text in ACCESS_LABELS \
+    if rules.access_labels and statement.ended_by == ":" and first.text in ACCESS_LABELS \
             and len(tokens) == start + 1:
         statement.kind = "label"                                  # public:
         return
@@ -806,7 +809,8 @@ def _classify_c(statement: Statement, lang: str = "java") -> None:
         else:
             statement.kind, statement.header = "class", True
         return
-    after_type = None if (lang == "csharp" and first.text == "await") else skip_type(tokens, start)
+    awaiting = rules.await_prefix and first.kind is TokenKind.IDENTIFIER and first.text == "await"
+    after_type = None if awaiting else skip_type(tokens, start)
     if after_type is not None and after_type < len(tokens):
         following = tokens[after_type]
         if following.kind in (TokenKind.IDENTIFIER, TokenKind.INVALID) or (
@@ -827,7 +831,7 @@ def _classify_c(statement: Statement, lang: str = "java") -> None:
             is_delim(tokens[start + 1], "(") and statement.ended_by == "{":
         statement.kind, statement.header = "method", True   # constructor: Main(...) {
         return
-    if lang == "cpp" and (stream := stream_kind(tokens)) is not None:
+    if rules.stream_chains and (stream := stream_kind(tokens)) is not None:
         statement.kind = stream
     elif find_top(tokens, *ASSIGNMENT_OPS) is not None:
         statement.kind = "assignment"
@@ -847,13 +851,13 @@ def _c_complete_header(tokens: list[Token]) -> bool:
     return False
 
 
-def _c_complete(tokens: list[Token]) -> bool:
+def _c_complete(tokens: list[Token], rules: LanguageRules = LanguageRules()) -> bool:
     """Does ``tokens`` form a finished simple statement that only lacks its ';'?"""
     if not tokens or not ends_value(tokens[-1]) or _c_complete_header(tokens):
         return False
     if tokens[0].text in ("case", "default"):
         return False
-    start = _strip_prefix(tokens)
+    start = _strip_prefix(tokens, rules)
     if start >= len(tokens):
         return False                      # only annotations, e.g. "@Override"
     if tokens[start].text in C_TYPE_DECLARATIONS:
@@ -951,7 +955,7 @@ def _append_braced(code: list[Token], index: int, current: list[Token]) -> int:
 
 def _needs_semicolon_before_brace(builder: _CBuilder) -> bool:
     tokens = builder.current
-    if _c_complete_header(tokens) or not _c_complete(tokens):
+    if _c_complete_header(tokens) or not _c_complete(tokens, builder.rules):
         return False
     if builder.blocks:  # enum constants need no ';' before the '}'
         enclosing = builder.statements[builder.blocks[-1]]

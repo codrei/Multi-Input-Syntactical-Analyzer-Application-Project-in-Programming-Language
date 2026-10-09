@@ -183,7 +183,7 @@ class ExpressionChecker:
     def is_await(self, tokens: list[Token], index: int) -> bool:
         """C# ``await`` is an ordinary name that acts as a prefix when a value follows it."""
         token = tokens[index]
-        if self.profile.key != "csharp" or token.kind is not TokenKind.IDENTIFIER \
+        if not self.profile.rules.await_prefix or token.kind is not TokenKind.IDENTIFIER \
                 or token.text != "await" or index + 1 >= len(tokens):
             return False
         following = tokens[index + 1]

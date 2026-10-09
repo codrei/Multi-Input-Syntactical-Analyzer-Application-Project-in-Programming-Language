@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from ..diagnostics import Diagnostic
 from ..expressions import ExpressionChecker, assignment_problem
+from ..profiles.rules import DISCARDED_VALUE_ERROR, DISCARDED_VALUE_WARNING, LanguageRules
 from ..structure import ASSIGNMENT_OPS, C_MODIFIERS, Statement, find_top, is_delim, skip_type, split_top
 from ..tokens import Token, TokenKind
 from . import Context
@@ -25,7 +26,7 @@ def check(context: Context) -> list[Diagnostic]:
         if context.python:
             _python_statement(statement, checker)
         else:
-            _c_statement(statement, checker, context.profile.key)
+            _c_statement(statement, checker, context.profile.rules)
         diagnostics += checker.diagnostics
     return diagnostics
 
@@ -125,7 +126,8 @@ def _python_assignment(code: list[Token], checker: ExpressionChecker) -> None:
 
 # --------------------------------------------------------------- C family
 
-def _c_statement(statement: Statement, checker: ExpressionChecker, lang: str = "java") -> None:
+def _c_statement(statement: Statement, checker: ExpressionChecker,
+                 rules: LanguageRules = LanguageRules()) -> None:
     code = statement.code
     if code and code[-1].text == ";":
         code = code[:-1]
@@ -164,12 +166,7 @@ def _c_statement(statement: Statement, checker: ExpressionChecker, lang: str = "
     elif kind in ("assignment", "expression", "call", "output"):
         checker.expression(code)
         if kind == "expression" and not checker.diagnostics:
-            if lang == "java":
-                _not_a_statement(code, checker)
-            elif lang == "csharp":
-                _csharp_not_a_statement(code, checker)
-            else:
-                _unused_value(code, checker, lang)
+            _DISCARDED_VALUE[rules.discarded_value](code, checker, rules)
 
 
 def _first_group(code: list[Token], start: int, handle) -> None:
@@ -222,25 +219,18 @@ def _declaration(code: list[Token], checker: ExpressionChecker) -> None:
             checker.expression(value)
 
 
-def _not_a_statement(code: list[Token], checker: ExpressionChecker) -> None:
-    """Java rejects expressions whose value is thrown away, such as 'x + 1;'.
+# ---- a statement that only computes a value ("x + 1;")
+#
+# What that means depends on the language, so each language's rules pick one of the two
+# handlers in _DISCARDED_VALUE below:
+#
+#   "error"    Java, C#   the language rejects it ("not a statement", E406).  The rules say which
+#                         forms are statements after all: calls, ++/--, 'new', and for C# also
+#                         'await' and property accessors.
+#   "warning"  C, C++     the language accepts any expression statement.  A value that is thrown
+#                         away is only a warning (W406), and common idioms are not reported.
 
-    Allowed on their own are assignments, calls, ++/-- and 'new' objects.
-    """
-    if code[-1].text in ("++", "--") or code[0].text in ("++", "--", "new", "this", "super"):
-        return
-    if code[-1].text == ")" and not any(token.kind is TokenKind.OPERATOR and
-                                        token.text not in ("->",) for _, token, depth in _top(code)
-                                        if depth == 0):
-        return                                        # a method call
-    if any(token.text == "->" for token in code):
-        return
-    checker.report(code[0], "E406", "Invalid Expression Statement",
-                   f"'{_text(code)}' is not a statement: its value would be computed and thrown away.",
-                   hint="Assign the result to a variable or use it in a call, e.g. x = x + 1;")
-
-
-def _is_call(code: list[Token], ignore: tuple[str, ...] = ("->",)) -> bool:
+def _is_call(code: list[Token], ignore: frozenset[str] | tuple[str, ...] = ("->",)) -> bool:
     """A name or member access followed by '(...)': no operator outside the brackets."""
     return code[-1].text == ")" and not any(
         token.kind is TokenKind.OPERATOR and token.text not in ignore
@@ -265,24 +255,28 @@ def _strip_generics(code: list[Token]) -> list[Token]:
     return result
 
 
-_ACCESSORS = frozenset("get set init add remove".split())
-
-
-def _csharp_not_a_statement(code: list[Token], checker: ExpressionChecker) -> None:
-    """C# allows only these expressions as statements: assignment, call, ``x++`` / ``--x``,
-    ``await``, and object creation with ``new``.  ``x + 1;`` is error CS0201."""
-    code = _strip_generics(code)
+def _discarded_value_error(code: list[Token], checker: ExpressionChecker,
+                           rules: LanguageRules) -> None:
+    """Java and C# reject ``x + 1;``.  Which expressions still count as statements is in the rules."""
+    if rules.generic_arguments:
+        code = _strip_generics(code)
     first, last = code[0], code[-1]
-    if first.kind is TokenKind.IDENTIFIER and first.text == "await" and len(code) > 1:
+    if rules.await_prefix and first.kind is TokenKind.IDENTIFIER and first.text == "await" \
+            and len(code) > 1:
         return                                        # await task;
     if last.text in ("++", "--") or first.text in ("++", "--", "new"):
         return
-    body = [token for token in code if not (token.kind is TokenKind.KEYWORD
-                                             and token.text in C_MODIFIERS)]
-    if body and body[0].text in _ACCESSORS and (len(body) == 1 or body[1].text == "=>"):
-        return                                        # property accessor: get; set; init;
-    if _is_call(code, ignore=("->", "?.", "!")):
-        return                                        # Foo(); a?.Foo(); a!.Foo();
+    if rules.self_reference_statements and first.text in ("this", "super"):
+        return
+    if rules.accessor_names:
+        body = [token for token in code
+                if not (token.kind is TokenKind.KEYWORD and token.text in C_MODIFIERS)]
+        if body and body[0].text in rules.accessor_names and (len(body) == 1 or body[1].text == "=>"):
+            return                                    # property accessor: get; set; init;
+    if _is_call(code, rules.call_operators):
+        return
+    if rules.arrow_statements and any(token.text == rules.arrow_statements for token in code):
+        return                                        # a lambda
     checker.report(first, "E406", "Invalid Expression Statement",
                    f"'{_text(code)}' is not a statement: its value would be computed and thrown away.",
                    hint="Assign the result to a variable or use it in a call, e.g. x = x + 1;")
@@ -291,13 +285,15 @@ def _csharp_not_a_statement(code: list[Token], checker: ExpressionChecker) -> No
 _UNUSED_OPERATORS = frozenset("+ - / % == != < > <= >= | ^ << >>".split())
 
 
-def _unused_value(code: list[Token], checker: ExpressionChecker, lang: str) -> None:
+def _unused_value_warning(code: list[Token], checker: ExpressionChecker,
+                          rules: LanguageRules) -> None:
     """C and C++ accept any expression as a statement, so a discarded value is only a warning.
 
     Calls, ``++``, ``cond ? f() : g();``, ``ok && f();``, ``(void)x;``, macro names and C++ stream
     chains (``cout << a``) are common and valid, so nothing is said about them.
     """
-    code = _strip_generics(code) if lang == "cpp" else code
+    if rules.generic_arguments:
+        code = _strip_generics(code)
     if len(code) >= 3 and code[0].text == "(" and code[1].text == "void" and code[2].text == ")":
         return
     operators = [token for index, token, depth in _top(code)
@@ -307,11 +303,18 @@ def _unused_value(code: list[Token], checker: ExpressionChecker, lang: str) -> N
         texts = {token.text for token in operators}
         if not texts & _UNUSED_OPERATORS or texts & {"?", "&&", "||", "++", "--"}:
             return
-        if lang == "cpp" and texts & {"<<", ">>"}:
+        if rules.stream_chains and texts & {"<<", ">>"}:
             return                                    # a stream chain
     checker.report(code[0], "W406", "Unused Expression Value",
                    f"'{_text(code)}' computes a value that is never used.",
                    hint="Assign the result to a variable, use it in a call, or remove the statement.")
+
+
+#: The handler for each ``LanguageRules.discarded_value`` setting.
+_DISCARDED_VALUE = {
+    DISCARDED_VALUE_ERROR: _discarded_value_error,
+    DISCARDED_VALUE_WARNING: _unused_value_warning,
+}
 
 
 # ----------------------------------------------------------------- helpers
