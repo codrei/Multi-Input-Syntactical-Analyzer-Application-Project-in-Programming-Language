@@ -37,7 +37,7 @@ _PY_FOLLOWS = {
     "except": ({"try", "except"}, "'except' without a matching 'try' before it."),
     "finally": ({"try", "except", "else"}, "'finally' without a matching 'try' before it."),
 }
-_LOOPS = {"for", "while", "do"}
+_LOOPS = {"for", "while", "do", "foreach"}
 
 
 def check(context: Context) -> list[Diagnostic]:

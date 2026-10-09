@@ -95,7 +95,10 @@ class ExpressionChecker:
             text = token.text
 
             if state == EXPECT_OPERAND:
-                if self.is_operand(token):
+                if self.is_await(tokens, index):
+                    last_prefix = token                   # C#: await Foo()
+                    index += 1
+                elif self.is_operand(token):
                     state, last_operator, last_prefix = EXPECT_OPERATOR, None, None
                     index += 1
                 elif is_delim(token, *OPENERS):
@@ -176,6 +179,16 @@ class ExpressionChecker:
             waiting = last_operator or last_prefix
             if waiting is not None:
                 self.report_missing_operand(waiting, tokens)
+
+    def is_await(self, tokens: list[Token], index: int) -> bool:
+        """C# ``await`` is an ordinary name that acts as a prefix when a value follows it."""
+        token = tokens[index]
+        if self.profile.key != "csharp" or token.kind is not TokenKind.IDENTIFIER \
+                or token.text != "await" or index + 1 >= len(tokens):
+            return False
+        following = tokens[index + 1]
+        return following.kind in (TokenKind.IDENTIFIER, TokenKind.KEYWORD, TokenKind.NUMBER,
+                                  TokenKind.STRING, TokenKind.CHAR) or is_delim(following, "(")
 
     # -------------------------------------------------------------- brackets
 

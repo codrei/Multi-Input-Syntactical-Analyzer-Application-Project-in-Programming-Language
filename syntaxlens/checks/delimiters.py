@@ -43,8 +43,8 @@ def scan(statement: Statement, python: bool) -> list[Diagnostic]:
     problems: list[Diagnostic] = []
     stack: list[Token] = []
     tokens = statement.tokens
-    if not python and statement.kind == "block_end":
-        return problems
+    if not python and statement.kind in ("block_end", "preprocessor"):
+        return problems                    # macros may hold unbalanced brackets: #define OPEN {
     if not python and statement.ended_by == "{":
         tokens = tokens[:-1]               # the block's '{' is matched across the file
     if python and statement.header and not statement.has_colon and is_delim(tokens[-1], "{"):

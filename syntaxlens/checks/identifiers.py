@@ -12,7 +12,7 @@ space (``my-var = 3``, ``int my var;``) and keywords used as names
 from __future__ import annotations
 
 from ..diagnostics import Check, Diagnostic, at
-from ..structure import ASSIGNMENT_OPS, Statement, find_top, is_delim, skip_type, split_top
+from ..structure import ASSIGNMENT_OPS, C_MODIFIERS, Statement, find_top, is_delim, skip_type, split_top
 from ..tokens import Issue, Token, TokenKind
 from . import Context
 
@@ -156,7 +156,7 @@ def _missing_name(statement: Statement) -> Diagnostic | None:
 _MODIFIERS = frozenset(
     "final static public private protected abstract transient volatile synchronized native "
     "default".split()
-)
+) | C_MODIFIERS
 
 
 def _after_type(code: list[Token]) -> int | None:
