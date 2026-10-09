@@ -46,5 +46,9 @@ class LanguageRules:
 
     def __post_init__(self) -> None:
         if self.discarded_value not in (DISCARDED_VALUE_ERROR, DISCARDED_VALUE_WARNING):
-            raise ValueError(f"discarded_value must be 'error' or 'warning', not "
+            raise ValueError("discarded_value must be 'error' or 'warning', not "
                              f"'{self.discarded_value}'.")
+
+
+#: A language with no special cases.  Use this as a default argument instead of ``LanguageRules()``.
+DEFAULT_RULES = LanguageRules()

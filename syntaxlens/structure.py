@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .lexer import LexResult
-from .profiles.rules import LanguageRules
+from .profiles.rules import DEFAULT_RULES, LanguageRules
 from .source import Source
 from .tokens import Token, TokenKind
 
@@ -613,7 +613,7 @@ def _c_statements(lex: LexResult) -> list[Statement]:
     return _CBuilder(_code_tokens(lex), lex).run()
 
 
-def _strip_prefix(tokens: list[Token], rules: LanguageRules = LanguageRules()) -> int:
+def _strip_prefix(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> int:
     """Index of the first token after leading annotations (@Name(...)) and modifiers.
 
     ``rules.contextual_modifiers`` are ordinary names that act as modifiers when a type or
@@ -760,7 +760,7 @@ def _classify_using(statement: Statement, tokens: list[Token], start: int) -> No
         statement.kind = "using"      # using System;  using static X;  using A = B;  using namespace std;
 
 
-def _classify_c(statement: Statement, rules: LanguageRules = LanguageRules()) -> None:
+def _classify_c(statement: Statement, rules: LanguageRules = DEFAULT_RULES) -> None:
     tokens = statement.code
     if not tokens:
         statement.kind = "empty"
@@ -851,7 +851,7 @@ def _c_complete_header(tokens: list[Token]) -> bool:
     return False
 
 
-def _c_complete(tokens: list[Token], rules: LanguageRules = LanguageRules()) -> bool:
+def _c_complete(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> bool:
     """Does ``tokens`` form a finished simple statement that only lacks its ';'?"""
     if not tokens or not ends_value(tokens[-1]) or _c_complete_header(tokens):
         return False

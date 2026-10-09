@@ -25,7 +25,7 @@ check 4's.
 from __future__ import annotations
 
 from ..diagnostics import Check, Diagnostic, at
-from ..profiles.rules import LanguageRules
+from ..profiles.rules import DEFAULT_RULES, LanguageRules
 from ..structure import Statement, find_top, is_delim, skip_type, split_top
 from ..tokens import Token, TokenKind
 from . import Context
@@ -150,7 +150,7 @@ def _python_def(first: Token, body: list[Token], report: _Reporter) -> None:
 # --------------------------------------------------------------- C family
 
 def _c_statement(statement: Statement, report: _Reporter,
-                 rules: LanguageRules = LanguageRules()) -> None:
+                 rules: LanguageRules = DEFAULT_RULES) -> None:
     code = statement.code
     if not code:
         return
@@ -239,7 +239,7 @@ def _c_after_header(statement: Statement, keyword: str, report: _Reporter) -> No
 
 
 def _c_method(statement: Statement, report: _Reporter,
-              rules: LanguageRules = LanguageRules()) -> None:
+              rules: LanguageRules = DEFAULT_RULES) -> None:
     """Every parameter needs a type and a name: void greet(String name, int times).
 
     The rules relax this per language.  C and C++ accept ``f(void)`` and ``f(int, ...)``, let a

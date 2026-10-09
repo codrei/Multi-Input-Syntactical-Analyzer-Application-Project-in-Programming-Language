@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from ..diagnostics import Diagnostic
 from ..expressions import ExpressionChecker, assignment_problem
-from ..profiles.rules import DISCARDED_VALUE_ERROR, DISCARDED_VALUE_WARNING, LanguageRules
+from ..profiles.rules import DEFAULT_RULES, DISCARDED_VALUE_ERROR, DISCARDED_VALUE_WARNING, LanguageRules
 from ..structure import ASSIGNMENT_OPS, C_MODIFIERS, Statement, find_top, is_delim, skip_type, split_top
 from ..tokens import Token, TokenKind
 from . import Context
@@ -127,7 +127,7 @@ def _python_assignment(code: list[Token], checker: ExpressionChecker) -> None:
 # --------------------------------------------------------------- C family
 
 def _c_statement(statement: Statement, checker: ExpressionChecker,
-                 rules: LanguageRules = LanguageRules()) -> None:
+                 rules: LanguageRules = DEFAULT_RULES) -> None:
     code = statement.code
     if code and code[-1].text == ";":
         code = code[:-1]

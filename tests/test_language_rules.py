@@ -16,6 +16,7 @@ from syntaxlens.checks import Context, operators, run_all
 from syntaxlens.lexer import tokenize
 from syntaxlens.profiles import CPP, CSHARP, JAVA, PROFILES, PYTHON, C
 from syntaxlens.profiles.rules import (
+    DEFAULT_RULES,
     DISCARDED_VALUE_ERROR,
     DISCARDED_VALUE_WARNING,
     LanguageRules,
@@ -46,7 +47,7 @@ def test_every_language_has_rules():
 
 
 def test_python_has_no_c_family_rules():
-    assert PYTHON.rules == LanguageRules()
+    assert PYTHON.rules == DEFAULT_RULES == LanguageRules()
 
 
 @pytest.mark.parametrize(
@@ -165,9 +166,11 @@ def test_the_await_rule_decides_whether_await_is_a_prefix():
 )
 def test_one_statement_in_every_language(body, expected):
     for language, code in expected.items():
-        wrapper = "class T {\n    void run() {\n%s\n    }\n}\n" if language in ("java", "csharp") \
-            else "void run() {\n%s\n}\n"
-        found = [c for _, c in codes(wrapper % body, language)]
+        if language in ("java", "csharp"):
+            code_text = "class T {\n    void run() {\n" + body + "\n    }\n}\n"
+        else:
+            code_text = "void run() {\n" + body + "\n}\n"
+        found = [c for _, c in codes(code_text, language)]
         assert found == ([code] if code else []), language
 
 
