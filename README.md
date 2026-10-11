@@ -8,14 +8,15 @@ splits the code into tokens and checks them against syntax rules. It then
 produces a report that either confirms the code is valid or lists each error
 with its line number, category and explanation.
 
-Languages: **Python** and **Java**, followed by C, C++, C# and JavaScript.
+Languages: **Python, Java, C, C++ and C#**.
 
-> **Status: Phases 1, 2, 4 and 5 of 8 complete.** All eight syntax checks work
-> for Python and Java, and both example reports from the project specification
-> are reproduced exactly. SyntaxLens has a **web app** and a **command line**,
-> each supporting all three input modes. Next: more languages and a no-install
-> Windows build. See the [progress checklist](#progress) and the full
-> [project plan](docs/PLAN.md).
+**Try it online: [multi-input-syntactical-analyzer-ap.vercel.app](https://multi-input-syntactical-analyzer-ap.vercel.app)**, or run it on your
+own computer without internet (see [the web app](#the-web-app)).
+
+> **Status: ready for presentation.** All eight syntax checks work in all five
+> languages, and both example reports from the project specification are
+> reproduced exactly. SyntaxLens has a **web app** and a **command line**, each
+> supporting all three input modes. See the [progress checklist](#progress).
 
 ![The SyntaxLens web app showing the specification's Example 2](docs/images/web-app.png)
 
@@ -48,15 +49,16 @@ the server is Python's built-in WSGI server, and the code editor
 ([CodeMirror 5](https://codemirror.net/5/), MIT license) is stored in the
 repository.
 
+On Windows you can also double-click **`run.bat`** in the project folder: it
+starts the web app and opens the browser.
+
 ### Online on Vercel
 
-The same app runs on [Vercel](https://vercel.com). [`app.py`](app.py) gives
-Vercel the app, and [`vercel.json`](vercel.json) sends every request to it.
-Nothing needs to be installed, because SyntaxLens uses only the standard
-library. To deploy:
-
-1. On vercel.com choose **Add New → Project**, and import this GitHub repository.
-2. Keep the default settings and press **Deploy**.
+The same app runs at **https://multi-input-syntactical-analyzer-ap.vercel.app**. [`app.py`](app.py) gives
+[Vercel](https://vercel.com) the app, and [`vercel.json`](vercel.json) sends
+every request to it. Nothing needs to be installed, because SyntaxLens uses
+only the standard library. Every push to `main` updates the site
+automatically, and every pull request gets its own preview.
 
 After that, every push to `main` updates the site automatically.
 
@@ -278,13 +280,13 @@ py -m pip install -e ".[dev]"
 py -m pytest
 ```
 
-319 automated tests run on Windows and Linux with Python 3.10–3.13 on every push:
+557 automated tests run on Windows and Linux with Python 3.10–3.14 on every push:
 
 - **Specification examples:** both example reports are reproduced exactly.
-- **Every check:** at least one test per error type, in Python and in Java.
-- **No false alarms:** ten realistic valid programs (about 2,000 lines of Python
-  and Java) must produce zero findings. Each is also confirmed valid by the real
-  compiler: CPython for Python, and `javac` on the GitHub test machines for Java.
+- **Every check:** at least one test per error type, in every language.
+- **No false alarms:** 17 realistic valid programs in the five languages must
+  produce zero findings. Each is also confirmed valid by the real compiler:
+  CPython for Python, `javac` for Java, and `gcc` / `g++` for C and C++.
 - **Lexer cross-check:** the Python lexer splits code token-for-token the same
   way as Python's own `tokenize` module.
 - **Robustness:** thousands of random inputs never crash the analyzer.
@@ -294,10 +296,10 @@ py -m pytest
 
 - [x] **Phase 1 — Foundation:** project setup, automated testing on Windows and Linux, input loading, language detection, Python and Java lexer, 8 token categories
 - [x] **Phase 2 — Syntax checks:** statement builder, the 8 checks for Python and Java, error recovery, the report in the specification's format; both specification examples reproduced
-- [ ] **Phase 3 — More languages:** C, C++, C#, JavaScript; accuracy measurement
+- [x] **Phase 3 — More languages:** C, C++ and C#, with per-language rules in [`profiles/rules.py`](syntaxlens/profiles/rules.py) ([overview](docs/LANGUAGE_RULES.md)); pointers, lambdas, brace initialization and C# properties
 - [x] **Phase 4 — Report and CLI:** detailed report style with column pointers, fix suggestions and per-category totals; JSON export; save to file; interactive menu; colors in the Windows terminal
 - [x] **Phase 5 — Web app:** three input tabs, errors marked in the code editor, result tabs with charts and counts, report download; runs offline (`py -m syntaxlens web`) and on Vercel
-- [ ] **Phase 6 — Hardening:** Windows `.exe`, one-click launcher
+- [x] **Phase 6 — Hardening:** one-click launcher (`run.bat`); live deployment on Vercel
 - [ ] **Phase 7 — Documentation:** User Manual (PDF and DOCX)
 - [ ] **Phase 8 — Demo:** demonstration video and defense preparation
 
@@ -315,7 +317,8 @@ syntaxlens/          the analyzer
   diagnostics.py       error model: codes, categories, severity
   report/text.py     ⑦ text reports (classic and detailed styles)
   report/json_report.py  JSON report (also used by the web app)
-  profiles/            language rules stored as data (Python, Java)
+  profiles/            each language's spelling and rules, stored as data
+                         (python.py, cfamily.py: Java, C, C++, C#; rules.py: what differs)
   cli.py               command-line interface
   menu.py              interactive menu (run with no command)
   console.py           terminal colors
@@ -323,8 +326,10 @@ syntaxlens/          the analyzer
   web/server.py        runs the web app locally: py -m syntaxlens web
   web/static/          the page: index.html, styles.css, app.js, CodeMirror editor
 app.py, vercel.json    Vercel deployment
+run.bat                one-click launcher for Windows
 tests/               automated tests (pytest) and valid sample programs
 samples/             demo inputs, including both specification examples
 docs/PLAN.md         project plan and schedule
+docs/LANGUAGE_RULES.md  which rule each language switches on
 docs/images/         screenshots
 ```
