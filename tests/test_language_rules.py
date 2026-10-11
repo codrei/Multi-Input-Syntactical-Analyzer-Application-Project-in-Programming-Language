@@ -81,6 +81,17 @@ def test_python_has_no_c_family_rules():
         (CSHARP, "parameter_modifiers", frozenset({"ref", "out", "in", "params", "this"})),
         (CSHARP, "contextual_modifiers", frozenset({"async", "partial", "required", "global"})),
         (CSHARP, "accessor_names", frozenset({"get", "set", "init", "add", "remove"})),
+        (C, "pointer_operators", True),
+        (CPP, "pointer_operators", True),
+        (JAVA, "pointer_operators", False),
+        (CSHARP, "pointer_operators", False),
+        (C, "arrow_member_access", True),
+        (CPP, "arrow_member_access", True),
+        (JAVA, "arrow_member_access", False),
+        (CPP, "brace_initialization", True),
+        (C, "brace_initialization", False),
+        (CSHARP, "property_initializers", True),
+        (JAVA, "property_initializers", False),
     ],
 )
 def test_rule_values(profile, field, expected):

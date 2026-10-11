@@ -62,6 +62,7 @@ _DIRECT_GROUPS = {
     "STRING_OPEN": (TokenKind.STRING, Issue.UNTERMINATED_STRING),
     "CHAR": (TokenKind.CHAR, None),
     "CHAR_OPEN": (TokenKind.CHAR, Issue.UNTERMINATED_STRING),
+    "RAW_STRING": (TokenKind.STRING, None),
     "CURLY_QUOTED": (TokenKind.INVALID, Issue.CURLY_QUOTES),
     "ILLEGAL": (TokenKind.INVALID, Issue.ILLEGAL_CHARACTER),
 }
@@ -124,6 +125,8 @@ def _check_number_end(text: str, start: int, end: int) -> tuple[int, TokenKind, 
     tail = _NUMBER_TAIL.match(text, end)
     if tail is None:
         return end, TokenKind.NUMBER, None
+    if text[start:end] == "0" and text[end] in "xXbBoO":
+        return tail.end(), TokenKind.INVALID, Issue.MALFORMED_NUMBER   # 0xG1: a bad hexadecimal number
     if text[start:end].isdigit() and text[end].isalpha():
         return tail.end(), TokenKind.INVALID, Issue.NAME_STARTS_WITH_DIGIT
     return tail.end(), TokenKind.INVALID, Issue.MALFORMED_NUMBER
@@ -180,6 +183,9 @@ def _literal_patterns(profile: LanguageProfile) -> list[tuple[str, str]]:
     # even escape a line break, continuing the string on the next line.
     escape = r"\\[\s\S]" if profile.escapes_span_lines else r"\\."
     patterns: list[tuple[str, str]] = []
+
+    if profile.raw_strings:               # C++: R"(text with "quotes" and \backslashes)"
+        patterns.append(("RAW_STRING", r'(?:u8|[uUL])?R"\((?:[^)]|\)(?!"))*\)"'))
 
     if profile.triple_quotes:
         complete = "|".join(

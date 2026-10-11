@@ -31,6 +31,7 @@ import difflib
 
 from .diagnostics import Check, Diagnostic, at
 from .profiles.base import LanguageProfile
+from .profiles.rules import DEFAULT_RULES, LanguageRules
 from .structure import (
     ASSIGNMENT_OPS,
     C_PRIMITIVES,
@@ -98,6 +99,9 @@ class ExpressionChecker:
                 if self.is_await(tokens, index):
                     last_prefix = token                   # C#: await Foo()
                     index += 1
+                elif self.is_pointer_prefix(tokens, index):
+                    last_prefix = token                   # C, C++: *pointer, &variable
+                    index += 1
                 elif self.is_operand(token):
                     state, last_operator, last_prefix = EXPECT_OPERATOR, None, None
                     index += 1
@@ -140,7 +144,9 @@ class ExpressionChecker:
                     end = self.group_end(tokens, index)
                     self.group(tokens, index, end, after_value=True)
                     index = end
-                elif is_delim(token, ".", "::") or text == "?.":
+                elif is_delim(token, ".", "::") or text == "?." or (
+                    text == "->" and self.profile.rules.arrow_member_access   # C, C++: node->next
+                ):
                     following = tokens[index + 1] if index + 1 < len(tokens) else None
                     if following is not None and (
                         following.kind in (TokenKind.IDENTIFIER, TokenKind.KEYWORD)
@@ -166,6 +172,8 @@ class ExpressionChecker:
                         segment_start = index + 1
                     state, last_operator = EXPECT_OPERAND, token
                     index += 1
+                elif not self.python and is_delim(token, "{") and is_delim(tokens[index - 1], ")"):
+                    index = self.group_end(tokens, index)  # the body of a lambda: [](int v) { ... }
                 elif self.is_operand(token) or is_delim(token, "{"):
                     previous = tokens[index - 1]
                     if not (self.python and previous.kind is TokenKind.STRING
@@ -179,6 +187,21 @@ class ExpressionChecker:
             waiting = last_operator or last_prefix
             if waiting is not None:
                 self.report_missing_operand(waiting, tokens)
+
+    def is_pointer_prefix(self, tokens: list[Token], index: int) -> bool:
+        """C and C++: '*p' reads through a pointer and '&x' takes an address.
+
+        Only before something that can be a pointer or a variable: a name, '(', another
+        '*' or '&', or '++' / '--'.  In '20 + * 5' the '*' comes before a number, so
+        it is still reported as two operators in a row.
+        """
+        if not self.profile.rules.pointer_operators or tokens[index].text not in ("*", "&"):
+            return False
+        following = tokens[index + 1] if index + 1 < len(tokens) else None
+        return following is not None and (
+            following.kind is TokenKind.IDENTIFIER or following.text in ("(", "*", "&", "++", "--")
+            or following.text in VALUE_KEYWORDS
+        )
 
     def is_await(self, tokens: list[Token], index: int) -> bool:
         """C# ``await`` is an ordinary name that acts as a prefix when a value follows it."""
@@ -294,15 +317,22 @@ class ExpressionChecker:
         return self.python and token.text == "..."
 
     def is_cast(self, tokens: list[Token], start: int, end: int) -> bool:
-        """'(int) x' or '(String) obj': a type in parentheses followed by a value."""
+        """'(int) x' or '(String) obj': a type in parentheses followed by a value.
+
+        With pointers (C, C++) the type may end in '*' and may be any name:
+        '(struct Node *) malloc(...)', '(size_t) n'.
+        """
         inner = tokens[start + 1: end - 1]
         following = tokens[end] if end < len(tokens) else None
+        pointers = self.profile.rules.pointer_operators
+        while pointers and inner and inner[-1].text in ("*", "&"):
+            inner = inner[:-1]
         if not inner or following is None or skip_type(inner, 0) != len(inner):
             return False
         first = inner[0]
         looks_like_type = first.text in C_PRIMITIVES or (
-            first.kind is TokenKind.IDENTIFIER and first.text[:1].isupper()
-        )
+            first.kind is TokenKind.IDENTIFIER and (first.text[:1].isupper() or pointers)
+        ) or (pointers and first.kind is TokenKind.KEYWORD)
         starts_value = following.kind in (
             TokenKind.IDENTIFIER, TokenKind.NUMBER, TokenKind.STRING, TokenKind.CHAR
         ) or following.text in VALUE_KEYWORDS or following.text in ("(", "!", "~", "new")
@@ -341,7 +371,7 @@ class ExpressionChecker:
         return position
 
     def check_target(self, target: list[Token], operator: Token) -> None:
-        problem = assignment_problem(target, python=self.python)
+        problem = assignment_problem(target, python=self.python, rules=self.profile.rules)
         if problem:
             what, culprit = problem
             self.report(culprit, "E404", "Invalid Assignment Target",
@@ -395,7 +425,8 @@ class ExpressionChecker:
                         hint="Add an operator (such as + or ==) or a comma between them.")
 
 
-def assignment_problem(target: list[Token], *, python: bool) -> tuple[str, Token] | None:
+def assignment_problem(target: list[Token], *, python: bool,
+                       rules: LanguageRules = DEFAULT_RULES) -> tuple[str, Token] | None:
     """Explain why ``target`` cannot be assigned to, or return None if it can.
 
     Names, attributes (obj.x) and list elements (a[0]) can be assigned to, as can
@@ -410,12 +441,14 @@ def assignment_problem(target: list[Token], *, python: bool) -> tuple[str, Token
     for part in parts:
         if python and part and part[0].text == "*":
             part = part[1:]
+        while rules.pointer_operators and part and part[0].text == "*":
+            part = part[1:]                               # C: *p = 5 stores through a pointer
         if not part:
             continue
         first = part[0]
         if is_delim(first, "(", "[") and ExpressionChecker.group_end(part, 0) == len(part):
             inner = part[1:-1]
-            problem = assignment_problem(inner, python=python) if inner else None
+            problem = assignment_problem(inner, python=python, rules=rules) if inner else None
             if problem:
                 return problem
             continue
@@ -429,7 +462,9 @@ def assignment_problem(target: list[Token], *, python: bool) -> tuple[str, Token
                 depth += 1
             elif is_delim(token, ")", "]", "}"):
                 depth -= 1
-            elif depth == 0 and token.kind is TokenKind.OPERATOR:
+            elif depth == 0 and token.kind is TokenKind.OPERATOR and not (
+                rules.arrow_member_access and token.text == "->"     # C: node->value = 5
+            ):
                 return "the expression", first
         if part[-1].text == ")":
             return "the function call", first

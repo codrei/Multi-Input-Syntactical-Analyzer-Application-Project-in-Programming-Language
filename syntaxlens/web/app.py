@@ -55,6 +55,9 @@ SAMPLE_FILES = [
     ("errors_demo.py", "Python - one error of each kind"),
     ("HelloWorld.java", "Java - valid program"),
     ("ErrorsDemo.java", "Java - common mistakes"),
+    ("errors_demo.c", "C - common mistakes"),
+    ("errors_demo.cpp", "C++ - common mistakes"),
+    ("errors_demo.cs", "C# - common mistakes"),
 ]
 
 _TYPES = {".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml"}
@@ -140,7 +143,9 @@ def _samples() -> list[dict]:
         path = SAMPLES / filename
         if path.is_file():
             samples.append({
-                "id": path.stem,
+                # Python samples keep their plain name (spec_example_2); others get the
+                # extension added, so errors_demo.c and errors_demo.cpp stay apart.
+                "id": path.stem if path.suffix == ".py" else f"{path.stem}_{path.suffix[1:]}",
                 "title": title,
                 "filename": filename,
                 "code": path.read_text(encoding="utf-8"),
