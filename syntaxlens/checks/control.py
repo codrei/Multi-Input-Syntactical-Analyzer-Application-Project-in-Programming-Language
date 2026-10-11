@@ -25,6 +25,7 @@ check 4's.
 from __future__ import annotations
 
 from ..diagnostics import Check, Diagnostic, at
+from ..profiles.rules import DEFAULT_RULES, LanguageRules
 from ..structure import Statement, find_top, is_delim, skip_type, split_top
 from ..tokens import Token, TokenKind
 from . import Context
@@ -40,7 +41,7 @@ def check(context: Context) -> list[Diagnostic]:
             if statement.header:
                 _python_header(statement, report)
         else:
-            _c_statement(statement, report)
+            _c_statement(statement, report, context.profile.rules)
     return diagnostics
 
 
@@ -148,7 +149,8 @@ def _python_def(first: Token, body: list[Token], report: _Reporter) -> None:
 
 # --------------------------------------------------------------- C family
 
-def _c_statement(statement: Statement, report: _Reporter) -> None:
+def _c_statement(statement: Statement, report: _Reporter,
+                 rules: LanguageRules = DEFAULT_RULES) -> None:
     code = statement.code
     if not code:
         return
@@ -164,7 +166,7 @@ def _c_statement(statement: Statement, report: _Reporter) -> None:
         return
     if not (statement.header or statement.kind == "do_while_end"):
         if statement.kind == "method":
-            _c_method(statement, report)
+            _c_method(statement, report, rules)
         return
 
     start = 0
@@ -183,7 +185,7 @@ def _c_statement(statement: Statement, report: _Reporter) -> None:
     elif keyword == "for":
         _c_for(statement, code, start, report)
     elif statement.kind == "method":
-        _c_method(statement, report)
+        _c_method(statement, report, rules)
 
 
 def _c_parenthesized(statement: Statement, code: list[Token], start: int, keyword: str,
@@ -236,21 +238,35 @@ def _c_after_header(statement: Statement, keyword: str, report: _Reporter) -> No
                "code below runs no matter what.", "Remove the ';' after the header.")
 
 
-def _c_method(statement: Statement, report: _Reporter) -> None:
-    """Every parameter needs a type and a name: void greet(String name, int times)."""
+def _c_method(statement: Statement, report: _Reporter,
+              rules: LanguageRules = DEFAULT_RULES) -> None:
+    """Every parameter needs a type and a name: void greet(String name, int times).
+
+    The rules relax this per language.  C and C++ accept ``f(void)`` and ``f(int, ...)``, let a
+    prototype leave the names out (``int add(int, int);``) and read ``Point p(1, 2);`` as a
+    variable.  Java and C# accept none of that, but C# adds parameter modifiers (``ref``,
+    ``out``, ``params``) and Java has ``final``.
+    """
     code = statement.code
     position = find_top(code, "(")
     if position is None:
         return
     end = _group_end(code, position)
     inner = code[position + 1: end - 1]
-    for parameter in split_top(inner, ","):
-        while parameter and (parameter[0].text == "final" or is_delim(parameter[0], "@")):
+    parameters = split_top(inner, ",")
+    if rules.void_parameter and [t.text for t in inner] == ["void"]:
+        return                                       # f(void): no parameters
+    if rules.parameter_names_optional and statement.ended_by != "{":
+        return                                       # a prototype, or a variable: Point p(1, 2);
+    for parameter in parameters:
+        while parameter and (
+            parameter[0].text in rules.parameter_modifiers or is_delim(parameter[0], "@")
+        ):
             parameter = parameter[2:] if is_delim(parameter[0], "@") else parameter[1:]
-        if not parameter:
+        if not parameter or (rules.variadic_parameter and [t.text for t in parameter] == ["..."]):
             continue
         after_type = skip_type(parameter, 0)
-        if after_type is None or after_type >= len(parameter):
+        if after_type is None or (after_type >= len(parameter) and not rules.parameter_names_optional):
             report(parameter[0], "E506",
                    f"Parameter '{_text(parameter)}' needs both a type and a name.",
                    "Write each parameter as: Type name (for example: int count).",

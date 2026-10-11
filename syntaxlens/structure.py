@@ -30,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .lexer import LexResult
+from .profiles.rules import DEFAULT_RULES, LanguageRules
 from .source import Source
 from .tokens import Token, TokenKind
 
@@ -47,7 +48,9 @@ ASSIGNMENT_OPS = frozenset(
 #: Calls that print output, shown as "Function Call / Output Statement".
 OUTPUT_CALLS = frozenset(
     """print System.out.println System.out.print System.out.printf System.out.format
-    System.err.println System.err.print System.err.printf""".split()
+    System.err.println System.err.print System.err.printf
+    printf puts putchar fputs fprintf std::printf std::puts
+    Console.WriteLine Console.Write Console.Error.WriteLine Console.Error.Write""".split()
 )
 
 #: The text shown after "Syntax Check:" in the report, for each statement kind.
@@ -69,7 +72,7 @@ KIND_LABELS = {
     "import": "Import Statement",
     "package": "Package Declaration",
     "exception": "Exception Handling",
-    "context": "Context Manager (with)",
+    "context": "Context Manager (with / using)",
     "decorator": "Decorator",
     "annotation": "Annotation",
     "scope": "Scope Declaration",
@@ -78,6 +81,9 @@ KIND_LABELS = {
     "block_end": "Block End",
     "enum_constants": "Enum Constants",
     "label": "Label",
+    "preprocessor": "Preprocessor Directive",
+    "using": "Using Directive / Alias",
+    "namespace": "Namespace Declaration",
     "empty": "Empty Statement",
     "expression": "Expression Statement",
 }
@@ -94,18 +100,29 @@ PY_SIMPLE_KINDS = {
     "nonlocal": "scope", "del": "delete", "assert": "assert",
 }
 
-C_PAREN_HEADERS = frozenset("if while for switch catch synchronized".split())
+C_PAREN_HEADERS = frozenset("if while for switch catch synchronized foreach lock using fixed".split())
 C_BARE_HEADERS = frozenset("else do try finally".split())
 C_MODIFIERS = frozenset(
     "public private protected static final abstract native synchronized transient volatile "
-    "strictfp default sealed".split()
+    "strictfp default sealed "
+    # C, C++ and C#
+    "typedef extern const inline constexpr explicit friend mutable register template "
+    "internal override virtual readonly unsafe".split()
 )
 C_PRIMITIVES = frozenset("int long short byte char float double boolean void".split())
-C_TYPE_DECLARATIONS = frozenset("class interface enum record".split())
+C_TYPE_DECLARATIONS = frozenset("class interface enum record struct union namespace".split())
+
+#: Keywords that name a type on their own in C, C++ and C# (Java has none of these).
+TYPE_WORDS = frozenset(
+    "bool string object decimal sbyte ushort uint ulong signed unsigned auto "
+    "wchar_t char8_t char16_t char32_t _Bool".split()
+)
+_TYPE_QUALIFIERS = frozenset("const volatile struct union enum typename".split())
+_BASE_TYPE_WORDS = C_PRIMITIVES | TYPE_WORDS
 C_HEADER_KINDS = {
     "if": "if", "else": "if", "while": "loop", "for": "loop", "do": "loop",
     "switch": "switch", "try": "exception", "catch": "exception", "finally": "exception",
-    "synchronized": "exception",
+    "synchronized": "exception", "foreach": "loop", "lock": "context", "fixed": "context",
 }
 C_SIMPLE_KINDS = {
     "return": "return", "break": "jump", "continue": "jump", "throw": "exception",
@@ -114,8 +131,14 @@ C_SIMPLE_KINDS = {
 #: Keywords that can only start a new statement (used to spot a missing ';').
 C_STATEMENT_STARTERS = (
     C_PRIMITIVES | C_MODIFIERS | C_TYPE_DECLARATIONS | C_PAREN_HEADERS | C_BARE_HEADERS
-    | frozenset("return break continue throw case new this super assert package import".split())
+    | frozenset("return break continue throw case new this super assert package import "
+                "typedef using namespace".split())
 )
+
+#: Names of the standard C++ streams: ``cout << x`` and ``cin >> x`` are call-like statements.
+STREAM_OUT = frozenset("cout cerr clog wcout wcerr wclog".split())
+STREAM_IN = frozenset("cin wcin".split())
+ACCESS_LABELS = frozenset("public private protected".split())
 
 
 @dataclass
@@ -222,12 +245,14 @@ def split_top(tokens: list[Token], separator: str) -> list[list[Token]]:
 
 def call_name(tokens: list[Token]) -> str | None:
     """'System.out.println' for a statement shaped like a call, else None."""
-    parts = []
+    parts: list[str] = []
+    separators: list[str] = []
     index = 0
     while index < len(tokens) and tokens[index].kind is TokenKind.IDENTIFIER:
         parts.append(tokens[index].text)
         index += 1
-        if index < len(tokens) and is_delim(tokens[index], "."):
+        if index < len(tokens) and is_delim(tokens[index], ".", "::"):
+            separators.append(tokens[index].text)
             index += 1
             continue
         break
@@ -236,7 +261,10 @@ def call_name(tokens: list[Token]) -> str | None:
         # print(...) is a call; so is print("hi) whose ')' was swallowed by an open string.
         if (tokens[-1].text == ")" or closes >= len(tokens) and not is_delim(tokens[-1], ")")) \
                 and find_top(tokens, *ASSIGNMENT_OPS) is None:
-            return ".".join(parts)
+            name = parts[0]
+            for separator, part in zip(separators, parts[1:], strict=False):
+                name += separator + part
+            return name
     return None
 
 
@@ -434,8 +462,10 @@ def _width(whitespace: str, tab: int) -> int:
 class _CBuilder:
     """Builds C-family statements by walking the tokens once."""
 
-    def __init__(self, code: list[Token]):
+    def __init__(self, code: list[Token], lex: LexResult):
         self.code = code
+        self.rules = lex.profile.rules
+        self.continued = lex.continued_lines
         self.statements: list[Statement] = []
         self.current: list[Token] = []
         self.depth = 0                  # open ( and [ in the current statement
@@ -448,7 +478,10 @@ class _CBuilder:
             return
         statement = Statement(len(self.statements), self.current, ended_by=ended_by,
                               missing_terminator=missing)
-        _classify_c(statement)
+        _classify_c(statement, self.rules)
+        if self.last_closed in ("struct", "union", "enum", "class", "typedef") \
+                and ended_by == ";" and statement.kind == "expression":
+            statement.kind = "declaration"             # struct P { ... } p;   typedef struct { ... } T;
         if self.last_closed == "do" and statement.keyword == "while":
             statement.kind = "do_while_end"
             statement.header = False
@@ -460,6 +493,29 @@ class _CBuilder:
             self.blocks.append(statement.index)
         self.current, self.depth = [], 0
         self.last_closed = None
+
+    def directive_end(self, index: int) -> int | None:
+        """If a preprocessor line starts at ``index``, emit it and return the index after it.
+
+        ``#include``, ``#define``, ``#pragma``, ``#region`` ... take the whole line (and the
+        lines joined to it by a trailing backslash).  They are not C statements: they have
+        no ';' and are left out of the expression checks.
+        """
+        code = self.code
+        token = code[index]
+        if not (self.rules.preprocessor_lines and is_delim(token, "#")):
+            return None
+        if index and code[index - 1].end_line >= token.line:
+            return None                                  # '#' in the middle of a line
+        limit = token.end_line
+        while limit in self.continued:
+            limit += 1
+        end = index
+        while end < len(code) and code[end].line <= limit:
+            end += 1
+        self.statements.append(Statement(len(self.statements), code[index:end],
+                                         kind="preprocessor", ended_by="line"))
+        return end
 
     def close_block(self, token: Token) -> None:
         statement = Statement(len(self.statements), [token], kind="block_end", ended_by="}")
@@ -479,6 +535,10 @@ class _CBuilder:
         index = 0
         while index < len(code):
             token = code[index]
+            after_directive = self.directive_end(index)
+            if after_directive is not None:
+                index = after_directive
+                continue
             current = self.current
             new_line = bool(current) and token.line > current[-1].end_line
 
@@ -486,13 +546,13 @@ class _CBuilder:
             if new_line and self.depth == 0 and current[0].text in ("case", "default") \
                     and ends_value(current[-1]) and _c_starts(code, index):
                 self.emit("line")                                # a label missing its ':'
-            elif new_line and self.depth == 0 and (_c_complete(current) or (
+            elif new_line and self.depth == 0 and (_c_complete(current, self.rules) or (
                 do_while_tail and _c_complete_header(current)
             )) and _c_starts(code, index):
                 self.emit("line", missing=True)                 # a ';' is missing
             elif new_line and self.depth > 0 and ends_value(current[-1]) and _c_starts(code, index) \
                     and not _in_for_header(current):
-                self.emit("line", missing=_c_complete(current))  # a ')' is missing
+                self.emit("line", missing=_c_complete(current, self.rules))  # a ')' is missing
             elif current and self.depth == 0 and _c_complete_header(current) \
                     and token.text not in ("{", ";") \
                     and not (current[-1].text == "else" and token.text == "if") \
@@ -532,7 +592,8 @@ class _CBuilder:
                 if self.depth == 0:
                     self.emit(";")
             elif text == ":" and self.depth == 0 and len(self.current) == 1 \
-                    and self.current[0].kind is TokenKind.IDENTIFIER:
+                    and (self.current[0].kind is TokenKind.IDENTIFIER or (
+                        self.rules.access_labels and self.current[0].text in ACCESS_LABELS)):
                 self.current.append(token)                       # a label: "outer:"
                 self.emit(":")
             elif text == ":" and self.depth == 0 and self.current \
@@ -544,16 +605,20 @@ class _CBuilder:
                 self.current.append(token)
             index += 1
         if self.current:
-            self.emit("eof", missing=_c_complete(self.current))
+            self.emit("eof", missing=_c_complete(self.current, self.rules))
         return self.statements
 
 
 def _c_statements(lex: LexResult) -> list[Statement]:
-    return _CBuilder(_code_tokens(lex)).run()
+    return _CBuilder(_code_tokens(lex), lex).run()
 
 
-def _strip_prefix(tokens: list[Token]) -> int:
-    """Index of the first token after leading annotations (@Name(...)) and modifiers."""
+def _strip_prefix(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> int:
+    """Index of the first token after leading annotations (@Name(...)) and modifiers.
+
+    ``rules.contextual_modifiers`` are ordinary names that act as modifiers when a type or
+    keyword follows them (C#: ``async Task Run()``, ``partial class``, ``global using``).
+    """
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -563,6 +628,13 @@ def _strip_prefix(tokens: list[Token]) -> int:
                 index = _skip_group(tokens, index)
             continue
         if token.kind is TokenKind.KEYWORD and token.text in C_MODIFIERS:
+            index += 1
+            continue
+        following = tokens[index + 1] if index + 1 < len(tokens) else None
+        if token.kind is TokenKind.IDENTIFIER and following is not None and (
+            token.text in rules.contextual_modifiers
+            and following.kind in (TokenKind.IDENTIFIER, TokenKind.KEYWORD)
+        ):
             index += 1
             continue
         if token.text == "<" and index > 0:          # generic method: <T> T max(...)
@@ -588,23 +660,46 @@ def _skip_group(tokens: list[Token], index: int) -> int:
 
 
 def skip_type(tokens: list[Token], index: int) -> int | None:
-    """If a type starts at ``index`` (int, String, List<String>, int[]), return the index after it."""
+    """If a type starts at ``index`` (int, String, List<String>, int[]), return the index after it.
+
+    Also understands the C, C++ and C# spellings: ``const char *``, ``unsigned long long``,
+    ``struct Point``, ``std::vector<int>``, ``string[]``, ``int?``.
+    """
+    while index < len(tokens) and tokens[index].kind is TokenKind.KEYWORD \
+            and tokens[index].text in _TYPE_QUALIFIERS:
+        index += 1
     if index >= len(tokens):
         return None
     token = tokens[index]
-    if token.text in C_PRIMITIVES or token.text == "var":
+    keyword_type = False
+    if token.text in C_PRIMITIVES or token.text == "var" or (
+        token.kind is TokenKind.KEYWORD and token.text in TYPE_WORDS
+    ):
         index += 1
+        keyword_type = True
+        while index < len(tokens) and tokens[index].kind is TokenKind.KEYWORD \
+                and tokens[index].text in _BASE_TYPE_WORDS:
+            index += 1                                # unsigned long long int
     elif token.kind is TokenKind.IDENTIFIER:
         index += 1
-        while index + 1 < len(tokens) and is_delim(tokens[index], ".") and \
+        while index + 1 < len(tokens) and is_delim(tokens[index], ".", "::") and \
                 tokens[index + 1].kind is TokenKind.IDENTIFIER:
             index += 2
         if index < len(tokens) and tokens[index].text == "<":
             index = _skip_type_arguments(tokens, index)
             if index is None:
                 return None
+            while index + 1 < len(tokens) and is_delim(tokens[index], "::") and \
+                    tokens[index + 1].kind is TokenKind.IDENTIFIER:
+                index += 2
     else:
         return None
+    if keyword_type:                                  # char *p, int &r, const char * const p, int?
+        while index < len(tokens) and (
+            tokens[index].text in ("*", "&", "&&", "?")
+            or (tokens[index].kind is TokenKind.KEYWORD and tokens[index].text in ("const", "volatile"))
+        ):
+            index += 1
     while index + 1 < len(tokens) and is_delim(tokens[index], "[") and is_delim(tokens[index + 1], "]"):
         index += 2
     if index < len(tokens) and is_delim(tokens[index], "..."):
@@ -612,7 +707,10 @@ def skip_type(tokens: list[Token], index: int) -> int | None:
     return index
 
 
-_TYPE_ARGUMENT_TOKENS = frozenset("? extends super , . & [ ]".split()) | C_PRIMITIVES
+_TYPE_ARGUMENT_TOKENS = (
+    frozenset("? extends super , . & [ ] :: * const typename class struct".split())
+    | C_PRIMITIVES | TYPE_WORDS
+)
 
 
 def _skip_type_arguments(tokens: list[Token], index: int) -> int | None:
@@ -631,7 +729,38 @@ def _skip_type_arguments(tokens: list[Token], index: int) -> int | None:
     return None
 
 
-def _classify_c(statement: Statement) -> None:
+def stream_kind(tokens: list[Token]) -> str | None:
+    """C++ stream chains: ``cout << a << endl`` prints, ``cin >> x`` reads, ``os << x`` writes.
+
+    They are calls to overloaded operators, so they count as call-like statements.
+    """
+    index = 2 if len(tokens) > 2 and tokens[0].text == "std" and is_delim(tokens[1], "::") else 0
+    if index + 1 >= len(tokens) or tokens[index].kind is not TokenKind.IDENTIFIER:
+        return None
+    operator = tokens[index + 1].text
+    if operator not in ("<<", ">>") or find_top(tokens, *ASSIGNMENT_OPS) is not None:
+        return None
+    name = tokens[index].text
+    if operator == "<<" and name in STREAM_OUT:
+        return "output"
+    return "call"
+
+
+def _classify_using(statement: Statement, tokens: list[Token], start: int) -> None:
+    """``using`` is a directive or alias, or (C#) a statement that disposes a resource."""
+    statement.keyword = "using"
+    following = tokens[start + 1] if start + 1 < len(tokens) else None
+    if following is not None and is_delim(following, "("):
+        statement.kind, statement.header = "context", True        # using (var f = ...) { ... }
+        return
+    after = skip_type(tokens, start + 1)
+    if after is not None and after < len(tokens) and tokens[after].kind is TokenKind.IDENTIFIER:
+        statement.kind = "declaration"                            # using var f = Open();
+    else:
+        statement.kind = "using"      # using System;  using static X;  using A = B;  using namespace std;
+
+
+def _classify_c(statement: Statement, rules: LanguageRules = DEFAULT_RULES) -> None:
     tokens = statement.code
     if not tokens:
         statement.kind = "empty"
@@ -647,12 +776,22 @@ def _classify_c(statement: Statement) -> None:
     ):
         statement.keyword, statement.kind = tokens[0].text, "case"   # a switch label
         return
-    start = _strip_prefix(tokens)
+    start = _strip_prefix(tokens, rules)
     if start >= len(tokens):
         statement.kind = "annotation"
         return
     first = tokens[start]
     word = first.text
+    if first.kind is TokenKind.KEYWORD and word == "using":
+        _classify_using(statement, tokens, start)
+        return
+    if first.kind is TokenKind.KEYWORD and word == "typedef":
+        statement.keyword, statement.kind = word, "declaration"
+        return
+    if rules.access_labels and statement.ended_by == ":" and first.text in ACCESS_LABELS \
+            and len(tokens) == start + 1:
+        statement.kind = "label"                                  # public:
+        return
     if word in C_HEADER_KINDS and first.kind is TokenKind.KEYWORD:
         statement.keyword = word
         statement.kind = C_HEADER_KINDS[word]
@@ -662,9 +801,16 @@ def _classify_c(statement: Statement) -> None:
         statement.keyword, statement.kind = word, C_SIMPLE_KINDS[word]
         return
     if first.kind is TokenKind.KEYWORD and word in C_TYPE_DECLARATIONS:
-        statement.keyword, statement.kind, statement.header = word, "class", True
+        statement.keyword = word
+        if word == "namespace":
+            statement.kind, statement.header = "namespace", statement.ended_by == "{"
+        elif word in ("struct", "union", "enum") and statement.ended_by == ";":
+            statement.kind = "declaration"                        # struct Point p;
+        else:
+            statement.kind, statement.header = "class", True
         return
-    after_type = skip_type(tokens, start)
+    awaiting = rules.await_prefix and first.kind is TokenKind.IDENTIFIER and first.text == "await"
+    after_type = None if awaiting else skip_type(tokens, start)
     if after_type is not None and after_type < len(tokens):
         following = tokens[after_type]
         if following.kind in (TokenKind.IDENTIFIER, TokenKind.INVALID) or (
@@ -685,7 +831,9 @@ def _classify_c(statement: Statement) -> None:
             is_delim(tokens[start + 1], "(") and statement.ended_by == "{":
         statement.kind, statement.header = "method", True   # constructor: Main(...) {
         return
-    if find_top(tokens, *ASSIGNMENT_OPS) is not None:
+    if rules.stream_chains and (stream := stream_kind(tokens)) is not None:
+        statement.kind = stream
+    elif find_top(tokens, *ASSIGNMENT_OPS) is not None:
         statement.kind = "assignment"
     else:
         statement.kind = _call_kind(tokens) or "expression"
@@ -703,13 +851,13 @@ def _c_complete_header(tokens: list[Token]) -> bool:
     return False
 
 
-def _c_complete(tokens: list[Token]) -> bool:
+def _c_complete(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> bool:
     """Does ``tokens`` form a finished simple statement that only lacks its ';'?"""
     if not tokens or not ends_value(tokens[-1]) or _c_complete_header(tokens):
         return False
     if tokens[0].text in ("case", "default"):
         return False
-    start = _strip_prefix(tokens)
+    start = _strip_prefix(tokens, rules)
     if start >= len(tokens):
         return False                      # only annotations, e.g. "@Override"
     if tokens[start].text in C_TYPE_DECLARATIONS:
@@ -769,6 +917,10 @@ def _starts_initializer(tokens: list[Token]) -> bool:
     if tokens[-1].text in ("=", "->"):
         return True
     has_assignment = find_top(tokens, *ASSIGNMENT_OPS) is not None
+    if has_assignment and any(t.text == "new" for t in tokens) and (
+        tokens[-1].kind is TokenKind.IDENTIFIER or tokens[-1].text == ">"
+    ):
+        return True                       # C#: new List<int> { 1, 2 }   new Point { X = 1 }
     return (has_assignment or tokens[0].text in ("return", "yield")) and tokens[-1].text in (")", "]")
 
 
@@ -803,7 +955,7 @@ def _append_braced(code: list[Token], index: int, current: list[Token]) -> int:
 
 def _needs_semicolon_before_brace(builder: _CBuilder) -> bool:
     tokens = builder.current
-    if _c_complete_header(tokens) or not _c_complete(tokens):
+    if _c_complete_header(tokens) or not _c_complete(tokens, builder.rules):
         return False
     if builder.blocks:  # enum constants need no ';' before the '}'
         enclosing = builder.statements[builder.blocks[-1]]
