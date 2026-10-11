@@ -35,3 +35,4 @@ class LanguageProfile:
     name_pattern: str                      # regex for identifiers
     number_pattern: str                    # regex for valid numeric literals
     rules: LanguageRules = DEFAULT_RULES   # what the language allows (see rules.py)
+    raw_strings: bool = False              # R"(text with "quotes")" raw string literals (C++)

@@ -79,6 +79,7 @@ KIND_LABELS = {
     "delete": "Delete Statement",
     "assert": "Assertion",
     "block_end": "Block End",
+    "initializer": "Property Initializer",
     "enum_constants": "Enum Constants",
     "label": "Label",
     "preprocessor": "Preprocessor Directive",
@@ -471,6 +472,7 @@ class _CBuilder:
         self.depth = 0                  # open ( and [ in the current statement
         self.blocks: list[int] = []     # indexes of headers whose '{' is still open
         self.last_closed: str | None = None   # keyword of the block closed just before
+        self.last_closed_kind: str | None = None   # kind of that block's header (C# properties)
         self.enum_start = False         # the next statement lists an enum's constants
 
     def emit(self, ended_by: str, missing: bool = False) -> None:
@@ -485,6 +487,9 @@ class _CBuilder:
         if self.last_closed == "do" and statement.keyword == "while":
             statement.kind = "do_while_end"
             statement.header = False
+        if self.rules.property_initializers and self.last_closed_kind == "declaration" \
+                and statement.first.text == "=":
+            statement.kind = "initializer"             # C#: public int X { get; set; } = 5;
         if self.enum_start and ended_by in (";", "}"):
             statement.kind = "enum_constants"          # enum Color { RED, GREEN, BLUE }
         self.enum_start = ended_by == "{" and statement.keyword == "enum"
@@ -492,7 +497,7 @@ class _CBuilder:
         if ended_by == "{":
             self.blocks.append(statement.index)
         self.current, self.depth = [], 0
-        self.last_closed = None
+        self.last_closed = self.last_closed_kind = None
 
     def directive_end(self, index: int) -> int | None:
         """If a preprocessor line starts at ``index``, emit it and return the index after it.
@@ -523,11 +528,11 @@ class _CBuilder:
             opener = self.statements[self.blocks.pop()]
             statement.opener = opener.index
             opener.closer_line = token.line
-            closed = opener.keyword
+            closed, closed_kind = opener.keyword, opener.kind
         else:
-            closed = None
+            closed = closed_kind = None
         self.statements.append(statement)
-        self.last_closed = closed
+        self.last_closed, self.last_closed_kind = closed, closed_kind
         self.enum_start = False
 
     def run(self) -> list[Statement]:
@@ -575,7 +580,7 @@ class _CBuilder:
                 self.current.append(token)
             elif text == "{":
                 if (self.depth > 0 and _brace_in_expression(self.current)) or (
-                    self.depth == 0 and _starts_initializer(self.current)
+                    self.depth == 0 and _starts_initializer(self.current, self.rules)
                 ):
                     index = _append_braced(code, index, self.current)
                     continue
@@ -659,7 +664,7 @@ def _skip_group(tokens: list[Token], index: int) -> int:
     return len(tokens)
 
 
-def skip_type(tokens: list[Token], index: int) -> int | None:
+def skip_type(tokens: list[Token], index: int, rules: LanguageRules = DEFAULT_RULES) -> int | None:
     """If a type starts at ``index`` (int, String, List<String>, int[]), return the index after it.
 
     Also understands the C, C++ and C# spellings: ``const char *``, ``unsigned long long``,
@@ -692,6 +697,8 @@ def skip_type(tokens: list[Token], index: int) -> int | None:
             while index + 1 < len(tokens) and is_delim(tokens[index], "::") and \
                     tokens[index + 1].kind is TokenKind.IDENTIFIER:
                 index += 2
+        if rules.pointer_operators:                   # Point *p, Node **head, const Point &r
+            keyword_type = True
     else:
         return None
     if keyword_type:                                  # char *p, int &r, const char * const p, int?
@@ -727,6 +734,35 @@ def _skip_type_arguments(tokens: list[Token], index: int) -> int | None:
         elif token.kind is not TokenKind.IDENTIFIER and token.text not in _TYPE_ARGUMENT_TOKENS:
             return None
     return None
+
+
+def split_declarators(tokens: list[Token]) -> list[list[Token]]:
+    """Split 'a = 1, b = 2' at its commas, but not at commas inside type arguments.
+
+        Map<String, Integer> m = new HashMap<String, Integer>(), other = null;
+                   ^ not a separator                  ^ not one    ^ a separator
+    """
+    parts: list[list[Token]] = [[]]
+    depth = 0
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token.text == "<" and index > 0 and tokens[index - 1].kind is TokenKind.IDENTIFIER:
+            end = _skip_type_arguments(tokens, index)
+            if end is not None:
+                parts[-1].extend(tokens[index:end])
+                index = end
+                continue
+        if is_delim(token, "(", "[", "{"):
+            depth += 1
+        elif is_delim(token, ")", "]", "}"):
+            depth -= 1
+        if depth == 0 and is_delim(token, ","):
+            parts.append([])
+        else:
+            parts[-1].append(token)
+        index += 1
+    return parts
 
 
 def stream_kind(tokens: list[Token]) -> str | None:
@@ -810,7 +846,7 @@ def _classify_c(statement: Statement, rules: LanguageRules = DEFAULT_RULES) -> N
             statement.kind, statement.header = "class", True
         return
     awaiting = rules.await_prefix and first.kind is TokenKind.IDENTIFIER and first.text == "await"
-    after_type = None if awaiting else skip_type(tokens, start)
+    after_type = None if awaiting else skip_type(tokens, start, rules)
     if after_type is not None and after_type < len(tokens):
         following = tokens[after_type]
         if following.kind in (TokenKind.IDENTIFIER, TokenKind.INVALID) or (
@@ -862,7 +898,7 @@ def _c_complete(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> bo
         return False                      # only annotations, e.g. "@Override"
     if tokens[start].text in C_TYPE_DECLARATIONS:
         return False                      # "public class A" waits for '{'
-    after_type = skip_type(tokens, start)
+    after_type = skip_type(tokens, start, rules)
     if after_type is not None and after_type + 1 < len(tokens) and \
             tokens[after_type].kind is TokenKind.IDENTIFIER and is_delim(tokens[after_type + 1], "(") \
             and tokens[-1].text == ")" and _skip_group(tokens, after_type + 1) == len(tokens):
@@ -904,17 +940,43 @@ def _brace_in_expression(tokens: list[Token]) -> bool:
     last = tokens[-1].text
     if last in ("->", ",", "(", "="):
         return True
+    if last == ")" and _is_lambda_parameters(tokens):
+        return True                       # C++: f([](int a) { ... })
     if last in (")", "]"):
         recent = tokens[-12:]
         return any(token.text == "new" for token in recent)
     return False
 
 
-def _starts_initializer(tokens: list[Token]) -> bool:
-    """A '{' that belongs to an expression: int[] a = {1, 2};  Runnable r = () -> {...};"""
+def _is_lambda_parameters(tokens: list[Token]) -> bool:
+    """Do the tokens end with a C++ lambda's '[capture](parameters)'?"""
+    depth = 0
+    for position in range(len(tokens) - 1, -1, -1):
+        if is_delim(tokens[position], ")"):
+            depth += 1
+        elif is_delim(tokens[position], "("):
+            depth -= 1
+            if depth == 0:
+                return position > 0 and is_delim(tokens[position - 1], "]")
+    return False
+
+
+def _starts_initializer(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> bool:
+    """A '{' that belongs to an expression: int[] a = {1, 2};  Runnable r = () -> {...};
+
+    With brace initialization (C++) also:  Point p{1, 2};  Point a{1}, b{2};  return {x, y};
+    """
     if not tokens:
         return False
     if tokens[-1].text in ("=", "->"):
+        return True
+    if rules.brace_initialization and (
+        [token.text for token in tokens] == ["return"]
+        or (tokens[-1].kind is TokenKind.IDENTIFIER and len(tokens) > 1 and (
+            is_delim(tokens[-2], ",")
+            or skip_type(tokens, _strip_prefix(tokens, rules), rules) == len(tokens) - 1
+        ))
+    ):
         return True
     has_assignment = find_top(tokens, *ASSIGNMENT_OPS) is not None
     if has_assignment and any(t.text == "new" for t in tokens) and (

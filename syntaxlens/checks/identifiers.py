@@ -12,7 +12,17 @@ space (``my-var = 3``, ``int my var;``) and keywords used as names
 from __future__ import annotations
 
 from ..diagnostics import Check, Diagnostic, at
-from ..structure import ASSIGNMENT_OPS, C_MODIFIERS, Statement, find_top, is_delim, skip_type, split_top
+from ..profiles.rules import LanguageRules
+from ..structure import (
+    ASSIGNMENT_OPS,
+    C_MODIFIERS,
+    Statement,
+    find_top,
+    is_delim,
+    skip_type,
+    split_declarators,
+    split_top,
+)
 from ..tokens import Issue, Token, TokenKind
 from . import Context
 
@@ -32,10 +42,10 @@ def check(context: Context) -> list[Diagnostic]:
                 statement=context.statement_index(token),
             ))
     for statement in context.statements:
-        for target in _names_declared(statement, context.python):
+        for target in _names_declared(statement, context.python, context.profile.rules):
             diagnostics += _check_name(target, statement)
         if not context.python:
-            missing = _missing_name(statement)
+            missing = _missing_name(statement, context.profile.rules)
             if missing:
                 diagnostics.append(missing)
     return diagnostics
@@ -87,7 +97,7 @@ def _check_name(target: list[Token], statement: Statement) -> list[Diagnostic]:
     return []
 
 
-def _names_declared(statement: Statement, python: bool) -> list[list[Token]]:
+def _names_declared(statement: Statement, python: bool, rules: LanguageRules) -> list[list[Token]]:
     """The token groups that a statement uses as new names."""
     code = statement.code
     if code and code[-1].text == ";":
@@ -96,7 +106,7 @@ def _names_declared(statement: Statement, python: bool) -> list[list[Token]]:
         return []
     if python:
         return _python_names(statement, code)
-    return _c_names(statement, code)
+    return _c_names(statement, code, rules)
 
 
 def _python_names(statement: Statement, code: list[Token]) -> list[list[Token]]:
@@ -120,16 +130,16 @@ def _python_names(statement: Statement, code: list[Token]) -> list[list[Token]]:
     return names
 
 
-def _c_names(statement: Statement, code: list[Token]) -> list[list[Token]]:
+def _c_names(statement: Statement, code: list[Token], rules: LanguageRules) -> list[list[Token]]:
     if statement.kind not in ("declaration", "method"):
         return []
-    after_type = _after_type(code)
+    after_type = _after_type(code, rules)
     if after_type is None or after_type >= len(code) or code[after_type].text in ASSIGNMENT_OPS:
         return []                                # no name at all: see _missing_name
     if statement.kind == "method":
         return [code[after_type: after_type + 1]]
     names = []
-    for declarator in split_top(code[after_type:], ","):
+    for declarator in split_declarators(code[after_type:]):
         position = find_top(declarator, "=")
         name = declarator[:position] if position is not None else declarator
         while len(name) >= 2 and is_delim(name[-1], "]") and is_delim(name[-2], "["):
@@ -138,12 +148,12 @@ def _c_names(statement: Statement, code: list[Token]) -> list[list[Token]]:
     return names
 
 
-def _missing_name(statement: Statement) -> Diagnostic | None:
+def _missing_name(statement: Statement, rules: LanguageRules) -> Diagnostic | None:
     """'int = 5;' declares a variable without a name."""
     code = statement.code
     if statement.kind != "declaration" or not code:
         return None
-    after_type = _after_type(code)
+    after_type = _after_type(code, rules)
     if after_type is not None and after_type < len(code) and code[after_type].text in ASSIGNMENT_OPS:
         type_token = code[after_type - 1]
         return at(code[after_type], Check.IDENTIFIERS, "E604", CATEGORY,
@@ -159,9 +169,9 @@ _MODIFIERS = frozenset(
 ) | C_MODIFIERS
 
 
-def _after_type(code: list[Token]) -> int | None:
+def _after_type(code: list[Token], rules: LanguageRules) -> int | None:
     """Index just after the declared type, skipping modifiers and annotations."""
     index = 0
     while index < len(code) and (code[index].text in _MODIFIERS or is_delim(code[index], "@")):
         index += 2 if is_delim(code[index], "@") else 1
-    return skip_type(code, index)
+    return skip_type(code, index, rules)

@@ -13,7 +13,16 @@ from __future__ import annotations
 from ..diagnostics import Diagnostic
 from ..expressions import ExpressionChecker, assignment_problem
 from ..profiles.rules import DEFAULT_RULES, DISCARDED_VALUE_ERROR, DISCARDED_VALUE_WARNING, LanguageRules
-from ..structure import ASSIGNMENT_OPS, C_MODIFIERS, Statement, find_top, is_delim, skip_type, split_top
+from ..structure import (
+    ASSIGNMENT_OPS,
+    C_MODIFIERS,
+    Statement,
+    find_top,
+    is_delim,
+    skip_type,
+    split_declarators,
+    split_top,
+)
 from ..tokens import Token, TokenKind
 from . import Context
 from .identifiers import broken_name
@@ -163,6 +172,8 @@ def _c_statement(statement: Statement, checker: ExpressionChecker,
             checker.expression(part)
     elif kind == "declaration":
         _declaration(code, checker)
+    elif kind == "initializer":                      # C#: public int X { get; set; } = 5;
+        checker.expression(code[1:])
     elif kind in ("assignment", "expression", "call", "output"):
         checker.expression(code)
         if kind == "expression" and not checker.diagnostics:
@@ -183,8 +194,9 @@ def _for_header(inner: list[Token], checker: ExpressionChecker) -> None:
     if len(parts) == 3:                               # for (init; condition; update)
         init, condition, update = parts
         if init:
-            if skip_type(init, 0) is not None and skip_type(init, 0) < len(init) and \
-                    init[skip_type(init, 0)].kind is TokenKind.IDENTIFIER:
+            after_type = skip_type(init, 0, checker.profile.rules)
+            if after_type is not None and after_type < len(init) and \
+                    init[after_type].kind is TokenKind.IDENTIFIER:
                 _declaration(init, checker)
             else:
                 checker.expression_list(init)
@@ -204,10 +216,10 @@ def _declaration(code: list[Token], checker: ExpressionChecker) -> None:
     while index < len(code) and (code[index].text in ("final", "static", "public", "private",
                                                        "protected", "transient", "volatile")):
         index += 1
-    after_type = skip_type(code, index)
+    after_type = skip_type(code, index, checker.profile.rules)
     if after_type is None:
         return
-    for declarator in split_top(code[after_type:], ","):
+    for declarator in split_declarators(code[after_type:]):
         position = find_top(declarator, "=")
         if position is None:
             continue

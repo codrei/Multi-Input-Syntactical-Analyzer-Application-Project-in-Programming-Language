@@ -29,6 +29,12 @@ class LanguageRules:
     stream_chains: bool = False             # 'cout << a << endl' is a call-like statement (C++)
     contextual_modifiers: frozenset[str] = frozenset()  # plain names that act as modifiers (C#)
     await_prefix: bool = False              # 'await' is a prefix operator, not a name (C#)
+    brace_initialization: bool = False      # 'Point p{1, 2};' and 'return {x, y};' (C++)
+    property_initializers: bool = False     # 'int X { get; set; } = 5;' (C#)
+
+    # ---- pointers (expressions.py)
+    pointer_operators: bool = False         # unary '*p' and '&x' before a name (C, C++)
+    arrow_member_access: bool = False       # 'node->next' is member access, not a lambda (C, C++)
 
     # ---- a statement that only computes a value (checks/operators.py)
     discarded_value: str = DISCARDED_VALUE_ERROR
