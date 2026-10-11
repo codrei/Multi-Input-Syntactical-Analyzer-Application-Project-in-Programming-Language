@@ -31,6 +31,9 @@ class LanguageRules:
     await_prefix: bool = False              # 'await' is a prefix operator, not a name (C#)
     brace_initialization: bool = False      # 'Point p{1, 2};' and 'return {x, y};' (C++)
     property_initializers: bool = False     # 'int X { get; set; } = 5;' (C#)
+    type_body_semicolon: bool = False       # 'struct P { ... };' needs the ';' after '}' (C, C++)
+    defaulted_members: bool = False         # 'Shape() = default;' and 'Shape(const Shape &) = delete;' (C++)
+    bracket_attributes: bool = False        # '[Serializable]' before a declaration (C#)
 
     # ---- pointers (expressions.py)
     pointer_operators: bool = False         # unary '*p' and '&x' before a name (C, C++)

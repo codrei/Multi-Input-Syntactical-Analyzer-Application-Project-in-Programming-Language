@@ -1,7 +1,7 @@
 # SyntaxLens — Project Plan
 
 **Project:** Multi-Input Syntactical Analyzer Application (final project)
-**Target submission and oral defense:** around **October 9, 2026** (to be confirmed)
+**Oral defense:** **October 13, 2026** (first planned for around October 9)
 **Current status:** see the [progress checklist in the README](../README.md#progress)
 
 ## 1. Goal
@@ -19,10 +19,10 @@ category and explanation.
 |---|---|---|
 | Implementation language | Python 3.10+. The analysis engine uses only the standard library (`re`, `dataclasses`, `enum`) | Readable by every member; no third-party code hides how the analysis works |
 | Interfaces | Web app (main interface) + command-line interface, both calling the same analysis function | The web app gives a tabbed UI with visual counts; the CLI shows the engine is independent of the interface |
-| Languages analyzed | Python and Java in the most depth, then C, C++, C# and JavaScript through shared C-style rules. The language is detected automatically, with a manual override | The spec's own examples use Python (`x = 10`) and Java (`System.out.println("Hello");`). Supporting both families covers both halves of the terminator check: semicolons, and colons/indentation |
+| Languages analyzed | Python and Java first, then C, C++ and C# through shared C-style code plus per-language rules ([LANGUAGE_RULES.md](LANGUAGE_RULES.md)). JavaScript was dropped to keep the five languages solid. The language is detected automatically, with a manual override | The spec's own examples use Python (`x = 10`) and Java (`System.out.println("Hello");`). Supporting both families covers both halves of the terminator check: semicolons, and colons/indentation |
 | Analysis approach | Hand-written pipeline: regex lexer → statement builder → 8 independent checks → error filter → report | A real compiler stops at the first error: Python's own parser reports only 1 of the 3 errors in the spec's Example 2. A hand-written pipeline can recover and report every root cause, and every part of it can be explained in the defense |
-| Web stack | FastAPI backend + plain HTML/CSS/JavaScript + the CodeMirror editor, with every file stored in the repo | No build step; works without internet on the presentation laptop |
-| Target platform | Windows first, tested on Windows and Linux on every push, plus a no-install Windows `.exe` | All team members use Windows; the defense runs on a team member's laptop |
+| Web stack | A WSGI app written with Python's standard library (no web framework) + plain HTML/CSS/JavaScript + the CodeMirror editor, with every file stored in the repo | No build step; works without internet on the presentation laptop |
+| Target platform | Windows first, tested on Windows and Linux on every push, plus a one-click `run.bat` launcher and the online app on Vercel (these replaced the planned `.exe`) | All team members use Windows; the defense runs on a team member's laptop |
 
 ## 3. Features
 
@@ -32,7 +32,7 @@ category and explanation.
 |---|---|---|
 | 1. Single line | "Single Line" tab | `syntaxlens line "x = 10"` |
 | 2. Code block | "Code Block" tab (editor with line numbers) | `syntaxlens block` |
-| 3. File upload | "Upload File" tab (drag and drop or browse: .py .java .c .cpp .h .cs .js .txt) | `syntaxlens file path/to/code.java` |
+| 3. File upload | "Upload File" tab (drag and drop or browse: .py .java .c .cpp .h .cs .txt) | `syntaxlens file path/to/code.java` |
 
 ### 3.2 Syntax checks
 
@@ -42,7 +42,7 @@ The spec requires at least 4 checks and lists 6. We implement all 6 plus 2 more:
 |---|---|---|
 | 1 | Delimiter & bracket matching | `if (x > 5` · `a[1)` · a stray `}` · a `{` that is never closed |
 | 2 | String & character literals | `print("hi)` · `'ab'` or `''` as a Java char literal · an unclosed `"""` |
-| 3 | Statement terminators | a missing `;` in Java/C/C++/C# (a warning in JavaScript) · a missing `:` after a Python `if/for/def/class` |
+| 3 | Statement terminators | a missing `;` in Java/C/C++/C# · a missing `:` after a Python `if/for/def/class` |
 | 4 | Operator syntax | `20 + * 5` · `x = 5 +` · `x = 5 6` · `5 = x` |
 | 5 | Control structure headers | `if :` · `for i range(10):` · Java `for (i=0, i<5, i++)` · `if x > 5 {` without parentheses · `case 1` without `:` |
 | 6 | Identifier naming | `2total = 5` · `int 1st;` · `my-var = 3` · `class = 5` |
@@ -105,7 +105,7 @@ syntaxlens/            the analysis engine and its interfaces
   analyzer.py          ⑥ pipeline and error filter                (Phase 2)
   report/              ⑦ text and JSON reports
   cli.py               command-line interface
-  web/                 FastAPI server and static web UI           (Phase 5)
+  web/                 WSGI server and static web UI              (Phase 5)
 tests/                 automated tests (pytest)
 samples/               demo input files
 docs/                  plan, manual, architecture, grammar, error catalog
@@ -120,20 +120,20 @@ docs/                  plan, manual, architecture, grammar, error catalog
   CPython's own `tokenize` module on sample programs.
 - **Valid-code set:** realistic programs in each language, confirmed valid by
   the real compilers. The analyzer must report zero errors on them.
-- **Planted-error set:** a script inserts one known error at a known line many
-  times. We measure precision and recall per category, which gives a measured
-  error rate.
+- **Planted-error set:** `tools/measure_accuracy.py` inserts one known error at
+  a known line, 1,601 times, and measures how many are caught on the right line
+  and by the right check (98.3% and 96.9% on Oct 11).
 - **Robustness:** random input never crashes the analyzer, and a 10,000-line
   file is analyzed in under one second.
 - **Continuous integration:** GitHub Actions runs every test on Windows and
-  Linux with Python 3.10–3.13 on every push.
+  Linux with Python 3.10–3.14 on every push.
 
 ## 6. Deliverables
 
-1. Source code repository with setup instructions, a one-click launcher and a Windows `.exe`
+1. Source code repository with setup instructions, a one-click launcher and the online app
 2. User Manual & System Documentation (3–5 pages, PDF and DOCX)
-3. Demo video (3–5 minutes) showing all three input modes
-4. Oral defense preparation: a guide answering the spec's sample questions, plus practice sessions
+3. Demo video (3–5 minutes): not needed for this submission
+4. Oral defense preparation: [a guide](DEFENSE_GUIDE.md) answering the spec's sample questions, plus practice sessions
 
 ## 7. Work areas
 
@@ -158,19 +158,19 @@ remaining phases are compressed.
 | Oct 2 | 2 | ✔ Statement builder, the 8 checks for Python and Java, error recovery; both spec examples reproduced exactly (done a day early) |
 | Oct 4 | 4 | ✔ Detailed report (column pointers, fixes, totals per category), JSON export, save to file, interactive menu, colors |
 | Oct 4 | 5 | ✔ Web app (three input tabs, errors marked in the editor, charts, report download); runs offline and on Vercel |
-| Mon Oct 5 | 3, 6 | C, C++, C#, JavaScript; Windows `.exe` and one-click launcher |
-| Tue Oct 6 | 6 | Hardening; **code freeze**; test run on the presentation laptop |
-| Wed Oct 7 | 7–8 | User Manual (PDF + DOCX); record the demo video |
-| Thu Oct 8 | — | Defense practice |
-| ~Fri Oct 9 | — | Submission and oral defense (date to be confirmed) |
+| Oct 5 | 3 | ✔ C, C++ and C# language profiles |
+| Oct 10 | 3 | ✔ Per-language rules (`profiles/rules.py`); C-family false alarms fixed |
+| Oct 11 | 3, 6–8 | ✔ Remaining C/C++/C# false alarms fixed; missing-`;` detection improved (catch rate measured); `run.bat`; User Manual (PDF + DOCX); defense guide |
+| Oct 12 | — | Defense practice; test run on the presentation laptop |
+| Tue Oct 13 | — | Oral defense |
 
-If time runs short, the depth of C, C++, C# and JavaScript support is reduced
-first; Python and Java stay complete.
+Revised on Oct 11: the defense date was set to October 13. JavaScript and the
+`.exe` were dropped; the demo video is not needed.
 
 ## 9. Risks
 
 | Risk | Mitigation |
 |---|---|
 | False errors on valid code | Zero-error requirement on the valid-code set, checked on every push. A construct the analyzer does not understand is not flagged |
-| The presentation laptop fails on the day | No-install `.exe`; all web files bundled (no internet needed); test run on Oct 6; the CLI and the recorded video as backups |
-| Six languages is a wide scope | Python and Java are completed first; the depth of the other languages is the first thing reduced if time runs short |
+| The presentation laptop fails on the day | `run.bat` needs only Python; all web files bundled (no internet needed); the online app and the CLI as backups; test run on Oct 12 |
+| Five languages is a wide scope | Python and Java are completed first; the depth of the other languages is the first thing reduced if time runs short |

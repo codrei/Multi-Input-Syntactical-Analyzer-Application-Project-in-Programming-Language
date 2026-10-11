@@ -22,6 +22,9 @@ starts comparing `profile.key` again.
 | `arrow_member_access` (`node->next`) | – | – | yes | yes | – |
 | `brace_initialization` (`Point p{1, 2};`, `return {x, y};`) | – | – | – | yes | – |
 | `property_initializers` (`int X { get; set; } = 5;`) | – | – | – | – | yes |
+| `type_body_semicolon` (`struct P { ... };` needs the `;`) | – | – | yes | yes | – |
+| `defaulted_members` (`Shape() = default;`, `= delete;`) | – | – | – | yes | – |
+| `bracket_attributes` (`[Serializable]` before a declaration) | – | – | – | – | yes |
 | `discarded_value` (`x + 1;`) | – | error | warning | warning | error |
 | `generic_arguments` (`Run<int>(x)` is a call) | – | – | – | yes | yes |
 | `self_reference_statements` (`this.f();`) | – | yes | – | – | – |
