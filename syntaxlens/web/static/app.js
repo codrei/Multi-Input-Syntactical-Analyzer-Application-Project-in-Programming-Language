@@ -70,12 +70,21 @@ function editorFor(mode) {
   return mode === "block" ? blockEditor : mode === "file" ? fileViewer : null;
 }
 
+// CodeMirror's "clike" mode colors Java, C, C++ and C#; "python" colors Python.
+const SYNTAX_MODES = {
+  python: "python", java: "text/x-java", c: "text/x-csrc", cpp: "text/x-c++src", csharp: "text/x-csharp",
+};
+const EXTENSION_LANGUAGES = {
+  py: "python", java: "java", c: "c", h: "c", cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp", cs: "csharp",
+};
+
 function syntaxMode(language) {
-  return language === "java" ? "text/x-java" : "python";
+  return SYNTAX_MODES[language] || "python";
 }
 
 function guessMode(filename) {
-  return /\.java$/i.test(filename || "") ? "text/x-java" : "python";
+  const extension = (filename || "").split(".").pop().toLowerCase();
+  return syntaxMode(EXTENSION_LANGUAGES[extension]);
 }
 
 /* --------------------------------------------------------------------- tabs */

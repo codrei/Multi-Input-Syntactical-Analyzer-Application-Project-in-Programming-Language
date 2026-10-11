@@ -134,3 +134,11 @@ def test_oversized_body_is_refused():
     statuses = []
     app(environ, lambda status, headers: statuses.append(status))
     assert statuses[0].startswith("413")
+
+
+def test_sample_ids_are_unique_and_cover_every_language():
+    _, _, content = request("GET", "/api/samples")
+    samples = json.loads(content)["samples"]
+    ids = [sample["id"] for sample in samples]
+    assert len(ids) == len(set(ids))
+    assert {"spec_example_2", "errors_demo", "errors_demo_c", "errors_demo_cpp", "errors_demo_cs"} <= set(ids)
