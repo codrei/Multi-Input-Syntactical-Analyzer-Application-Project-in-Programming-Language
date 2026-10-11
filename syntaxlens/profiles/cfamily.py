@@ -146,6 +146,7 @@ C = LanguageProfile(
         preprocessor_lines=True,
         discarded_value=DISCARDED_VALUE_WARNING,   # 'x + 1;' is legal C
         pointer_operators=True,                    # *p, &x
+        type_body_semicolon=True,                  # struct Point { ... };
         arrow_member_access=True,                  # node->next
         call_operators=frozenset({"->"}),
         void_parameter=True,
@@ -209,6 +210,8 @@ CPP = LanguageProfile(
         discarded_value=DISCARDED_VALUE_WARNING,
         brace_initialization=True,                 # Point p{1, 2};  return {x, y};
         pointer_operators=True,
+        type_body_semicolon=True,
+        defaulted_members=True,                    # Shape() = default;
         arrow_member_access=True,
         generic_arguments=True,
         call_operators=frozenset({"->"}),
@@ -267,6 +270,7 @@ CSHARP = LanguageProfile(
         contextual_modifiers=frozenset({"async", "partial", "required", "global"}),
         await_prefix=True,
         property_initializers=True,                # public int X { get; set; } = 5;
+        bracket_attributes=True,                   # [Serializable] public class A
         # 'x + 1;' is "not a statement"; calls, ++/--, 'new', 'await' and accessors are fine.
         generic_arguments=True,
         call_operators=frozenset({"->", "?.", "!"}),

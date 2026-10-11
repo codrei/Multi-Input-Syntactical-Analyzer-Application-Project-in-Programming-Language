@@ -31,7 +31,12 @@ def check(context: Context) -> list[Diagnostic]:
                 last.end_line, last.end_col, hint=hint, statement=statement.index,
             ))
         elif not context.python and statement.missing_terminator:
-            what = "the do-while condition" if statement.kind == "do_while_end" else "the statement"
+            if statement.kind == "do_while_end":
+                what = "the do-while condition"
+            elif statement.kind == "block_end" and statement.opener is not None:
+                what = f"the '{context.statements[statement.opener].keyword}' definition"   # struct P { };
+            else:
+                what = "the statement"
             diagnostics.append(Diagnostic(
                 Check.TERMINATORS, "E301", "Missing Semicolon",
                 f"Missing semicolon ';' at the end of {what}.",

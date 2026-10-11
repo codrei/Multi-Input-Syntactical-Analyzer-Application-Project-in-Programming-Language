@@ -92,6 +92,14 @@ def test_python_has_no_c_family_rules():
         (C, "brace_initialization", False),
         (CSHARP, "property_initializers", True),
         (JAVA, "property_initializers", False),
+        (C, "type_body_semicolon", True),
+        (CPP, "type_body_semicolon", True),
+        (JAVA, "type_body_semicolon", False),
+        (CSHARP, "type_body_semicolon", False),
+        (CPP, "defaulted_members", True),
+        (C, "defaulted_members", False),
+        (CSHARP, "bracket_attributes", True),
+        (JAVA, "bracket_attributes", False),
     ],
 )
 def test_rule_values(profile, field, expected):
@@ -197,7 +205,8 @@ def test_one_statement_in_every_language(body, expected):
 )
 def test_one_parameter_list_in_every_language(header, expected):
     for language, errors in expected.items():
-        found = [c for _, c in codes(f"class T {{\n    {header}\n    }}\n}}\n", language)]
+        # C++ needs the ';' after a class body; Java and C# allow it.
+        found = [c for _, c in codes(f"class T {{\n    {header}\n    }}\n}};\n", language)]
         assert found == errors, language
 
 

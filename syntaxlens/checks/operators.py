@@ -140,7 +140,7 @@ def _c_statement(statement: Statement, checker: ExpressionChecker,
     code = statement.code
     if code and code[-1].text == ";":
         code = code[:-1]
-    if not code or statement.kind in ("method", "class", "import", "package", "annotation",
+    if not code or statement.kind in ("method", "defaulted", "class", "import", "package", "annotation",
                                        "block_end", "label", "empty", "enum_constants",
                                        "preprocessor", "using", "namespace"):
         return

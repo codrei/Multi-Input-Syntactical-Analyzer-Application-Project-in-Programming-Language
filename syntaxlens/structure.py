@@ -42,7 +42,7 @@ VALUE_KEYWORDS = frozenset("True False None true false null this super".split())
 
 #: Assignment operators (Python and C family).
 ASSIGNMENT_OPS = frozenset(
-    "= += -= *= /= //= %= **= @= &= |= ^= <<= >>= >>>=".split()
+    "= += -= *= /= //= %= **= @= &= |= ^= <<= >>= >>>= ??=".split()
 )
 
 #: Calls that print output, shown as "Function Call / Output Statement".
@@ -66,6 +66,7 @@ KIND_LABELS = {
     "call": "Function Call",
     "function": "Function Definition",
     "method": "Method Declaration",
+    "defaulted": "Method Declaration",
     "class": "Class Declaration",
     "return": "Return Statement",
     "jump": "Jump Statement",
@@ -132,14 +133,19 @@ C_SIMPLE_KINDS = {
 #: Keywords that can only start a new statement (used to spot a missing ';').
 C_STATEMENT_STARTERS = (
     C_PRIMITIVES | C_MODIFIERS | C_TYPE_DECLARATIONS | C_PAREN_HEADERS | C_BARE_HEADERS
+    | TYPE_WORDS
     | frozenset("return break continue throw case new this super assert package import "
-                "typedef using namespace".split())
+                "typedef using namespace delete goto".split())
 )
 
 #: Names of the standard C++ streams: ``cout << x`` and ``cin >> x`` are call-like statements.
 STREAM_OUT = frozenset("cout cerr clog wcout wcerr wclog".split())
 STREAM_IN = frozenset("cin wcin".split())
 ACCESS_LABELS = frozenset("public private protected".split())
+#: Blocks that are a type's body.  In C and C++ such a body ends with '};'.
+TYPE_BODY_KEYWORDS = frozenset("struct union enum class typedef".split())
+#: Words that may continue a method signature on the next line: 'where T : new()', 'const'.
+SIGNATURE_TAILS = frozenset("where const noexcept override final throws requires".split())
 
 
 @dataclass
@@ -473,6 +479,7 @@ class _CBuilder:
         self.blocks: list[int] = []     # indexes of headers whose '{' is still open
         self.last_closed: str | None = None   # keyword of the block closed just before
         self.last_closed_kind: str | None = None   # kind of that block's header (C# properties)
+        self.closed_type_body = False   # the block closed just before was a struct/class body
         self.enum_start = False         # the next statement lists an enum's constants
 
     def emit(self, ended_by: str, missing: bool = False) -> None:
@@ -492,7 +499,7 @@ class _CBuilder:
             statement.kind = "initializer"             # C#: public int X { get; set; } = 5;
         if self.enum_start and ended_by in (";", "}"):
             statement.kind = "enum_constants"          # enum Color { RED, GREEN, BLUE }
-        self.enum_start = ended_by == "{" and statement.keyword == "enum"
+        self.enum_start = ended_by == "{" and _is_enum_header(statement)
         self.statements.append(statement)
         if ended_by == "{":
             self.blocks.append(statement.index)
@@ -524,15 +531,19 @@ class _CBuilder:
 
     def close_block(self, token: Token) -> None:
         statement = Statement(len(self.statements), [token], kind="block_end", ended_by="}")
+        type_body = False
         if self.blocks:
             opener = self.statements[self.blocks.pop()]
             statement.opener = opener.index
             opener.closer_line = token.line
             closed, closed_kind = opener.keyword, opener.kind
+            # "struct Node {" is a type's body; "struct Node *make(int v) {" is a function's.
+            type_body = closed in TYPE_BODY_KEYWORDS and not any(is_delim(t, "(") for t in opener.tokens)
         else:
             closed = closed_kind = None
         self.statements.append(statement)
         self.last_closed, self.last_closed_kind = closed, closed_kind
+        self.closed_type_body = type_body
         self.enum_start = False
 
     def run(self) -> list[Statement]:
@@ -548,19 +559,25 @@ class _CBuilder:
             new_line = bool(current) and token.line > current[-1].end_line
 
             do_while_tail = self.last_closed == "do" and bool(current) and current[0].text == "while"
+            if is_delim(token, "}"):
+                new_line = False        # a '}' decides for itself whether a ';' is missing (enums)
             if new_line and self.depth == 0 and current[0].text in ("case", "default") \
-                    and ends_value(current[-1]) and _c_starts(code, index):
+                    and ends_value(current[-1]) and _c_starts(code, index, self.rules):
                 self.emit("line")                                # a label missing its ':'
             elif new_line and self.depth == 0 and (_c_complete(current, self.rules) or (
                 do_while_tail and _c_complete_header(current)
-            )) and _c_starts(code, index):
+            )) and _c_starts(code, index, self.rules):
                 self.emit("line", missing=True)                 # a ';' is missing
-            elif new_line and self.depth > 0 and ends_value(current[-1]) and _c_starts(code, index) \
-                    and not _in_for_header(current):
+            elif new_line and self.depth == 0 and _c_function_header(current, self.rules) \
+                    and token.text not in SIGNATURE_TAILS and _c_starts(code, index, self.rules):
+                self.emit("line", missing=True)                 # "int add(int a, int b)" without ';'
+            elif new_line and self.depth > 0 and ends_value(current[-1]) \
+                    and _c_starts(code, index, self.rules) and not _in_for_header(current):
                 self.emit("line", missing=_c_complete(current, self.rules))  # a ')' is missing
             elif current and self.depth == 0 and _c_complete_header(current) \
                     and token.text not in ("{", ";") \
                     and not (current[-1].text == "else" and token.text == "if") \
+                    and not (current[-1].text == "try" and is_delim(token, "(")) \
                     and not (self.last_closed == "do" and current[0].text == "while"):
                 if is_delim(token, ":"):                        # "if (x):" written Python-style
                     self.current.append(token)
@@ -590,6 +607,10 @@ class _CBuilder:
                 if self.current:
                     self.emit("}", missing=_needs_semicolon_before_brace(self))
                 self.close_block(token)
+                if self.rules.type_body_semicolon and self.closed_type_body \
+                        and not _declarator_follows(code, index + 1):
+                    self.statements[-1].missing_terminator = True   # struct P { ... }  needs '};'
+                    self.closed_type_body = False
             elif text == ";":
                 if self.depth > 0 and not _in_for_header(self.current):
                     self.depth = 0                               # an unclosed '(' before ';'
@@ -634,6 +655,10 @@ def _strip_prefix(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> 
             continue
         if token.kind is TokenKind.KEYWORD and token.text in C_MODIFIERS:
             index += 1
+            continue
+        if rules.bracket_attributes and is_delim(token, "[") \
+                and (index == 0 or is_delim(tokens[index - 1], "]")):
+            index = _skip_group(tokens, index)       # C#: [Serializable]  [Obsolete("old")]
             continue
         following = tokens[index + 1] if index + 1 < len(tokens) else None
         if token.kind is TokenKind.IDENTIFIER and following is not None and (
@@ -818,6 +843,9 @@ def _classify_c(statement: Statement, rules: LanguageRules = DEFAULT_RULES) -> N
         return
     first = tokens[start]
     word = first.text
+    if rules.defaulted_members and _ends_defaulted(tokens) and find_top(tokens, "(") is not None:
+        statement.kind = "defaulted"                              # Shape() = default;
+        return
     if first.kind is TokenKind.KEYWORD and word == "using":
         _classify_using(statement, tokens, start)
         return
@@ -889,19 +917,20 @@ def _c_complete_header(tokens: list[Token]) -> bool:
 
 def _c_complete(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> bool:
     """Does ``tokens`` form a finished simple statement that only lacks its ';'?"""
-    if not tokens or not ends_value(tokens[-1]) or _c_complete_header(tokens):
+    if not tokens or _c_complete_header(tokens):
         return False
+    if len(tokens) == 1 and tokens[0].text in ("break", "continue"):
+        return True
+    if not (ends_value(tokens[-1]) or is_delim(tokens[-1], "}") or _ends_defaulted(tokens)):
+        return False                      # a '}' here closed an initializer or a lambda: a value
     if tokens[0].text in ("case", "default"):
         return False
     start = _strip_prefix(tokens, rules)
     if start >= len(tokens):
         return False                      # only annotations, e.g. "@Override"
-    if tokens[start].text in C_TYPE_DECLARATIONS:
+    if tokens[start].text in C_TYPE_DECLARATIONS and not _declares_variable(tokens, start, rules):
         return False                      # "public class A" waits for '{'
-    after_type = skip_type(tokens, start, rules)
-    if after_type is not None and after_type + 1 < len(tokens) and \
-            tokens[after_type].kind is TokenKind.IDENTIFIER and is_delim(tokens[after_type + 1], "(") \
-            and tokens[-1].text == ")" and _skip_group(tokens, after_type + 1) == len(tokens):
+    if _c_function_header(tokens, rules):
         return False                      # "void run()" waits for '{'
     if tokens[0].kind is TokenKind.IDENTIFIER and len(tokens) > 1 and is_delim(tokens[1], "(") \
             and start > 0:
@@ -909,7 +938,44 @@ def _c_complete(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> bo
     return True
 
 
-def _c_starts(code: list[Token], index: int) -> bool:
+def _c_function_header(tokens: list[Token], rules: LanguageRules = DEFAULT_RULES) -> bool:
+    """'void run()', 'int add(int, int)' or 'Point p(1, 2)': a ';' or a '{' must follow."""
+    if not tokens or tokens[-1].text != ")":
+        return False
+    start = _strip_prefix(tokens, rules)
+    after_type = skip_type(tokens, start, rules)
+    return after_type is not None and after_type + 1 < len(tokens) and \
+        tokens[after_type].kind is TokenKind.IDENTIFIER and is_delim(tokens[after_type + 1], "(") \
+        and _skip_group(tokens, after_type + 1) == len(tokens)
+
+
+def _declares_variable(tokens: list[Token], start: int, rules: LanguageRules = DEFAULT_RULES) -> bool:
+    """'struct Node *next' or 'enum Color c = RED' declares a variable; 'struct Node' starts a type."""
+    after_type = skip_type(tokens, start, rules)
+    return after_type is not None and after_type < len(tokens) \
+        and tokens[after_type].kind is TokenKind.IDENTIFIER
+
+
+def _is_enum_header(statement: Statement) -> bool:
+    """'enum Color {', 'enum class Kind {' or 'typedef enum {', but not a function returning an enum."""
+    return any(token.text == "enum" and token.kind is TokenKind.KEYWORD for token in statement.tokens) \
+        and not any(is_delim(token, "(") for token in statement.tokens)
+
+
+def _ends_defaulted(tokens: list[Token]) -> bool:
+    """C++: 'Shape() = default' and 'Copy(const Copy &) = delete' end with a keyword."""
+    return len(tokens) > 1 and tokens[-2].text == "=" and tokens[-1].text in ("default", "delete")
+
+
+def _declarator_follows(code: list[Token], index: int) -> bool:
+    """After a struct body: '};' or a variable, as in '} point;' and '} *head;'."""
+    following = code[index] if index < len(code) else None
+    return following is not None and (
+        is_delim(following, ";") or following.kind is TokenKind.IDENTIFIER or following.text in ("*", "&")
+    )
+
+
+def _c_starts(code: list[Token], index: int, rules: LanguageRules = DEFAULT_RULES) -> bool:
     """Does the token at ``index`` begin a new statement (not continue the last one)?"""
     token = code[index]
     following = code[index + 1] if index + 1 < len(code) else None
@@ -917,11 +983,26 @@ def _c_starts(code: list[Token], index: int) -> bool:
         return True
     if is_delim(token, "@", "}"):
         return True
-    if token.kind is TokenKind.IDENTIFIER and following is not None and following.line == token.line:
-        if following.kind is TokenKind.IDENTIFIER:
-            return True                   # "String name"
-        return following.text in ASSIGNMENT_OPS or following.text in ("(", ".", "[", "++", "--", "<")
-    return False
+    if token.text in ("++", "--") and following is not None and following.line == token.line \
+            and following.kind is TokenKind.IDENTIFIER:
+        return True                       # "--total;"
+    if token.kind is not TokenKind.IDENTIFIER:
+        return False
+    while following is not None and is_delim(following, "::") and index + 2 < len(code) \
+            and code[index + 2].kind is TokenKind.IDENTIFIER:
+        index += 2                        # a qualified name: std::string, shapes::Point
+        token, following = code[index], (code[index + 1] if index + 1 < len(code) else None)
+    if following is None or following.line != token.line:
+        return False
+    if following.kind is TokenKind.IDENTIFIER:
+        return True                       # "String name"
+    if rules.stream_chains and token.text in STREAM_OUT | STREAM_IN and following.text in ("<<", ">>"):
+        return True                       # "cout << x"
+    if rules.arrow_member_access and following.text == "->":
+        return True                       # "node->next = head"
+    if is_delim(following, ":"):
+        return True                       # a label: "outer:"
+    return following.text in ASSIGNMENT_OPS or following.text in ("(", ".", "[", "++", "--", "<")
 
 
 def _in_for_header(tokens: list[Token]) -> bool:
@@ -1017,10 +1098,13 @@ def _append_braced(code: list[Token], index: int, current: list[Token]) -> int:
 
 def _needs_semicolon_before_brace(builder: _CBuilder) -> bool:
     tokens = builder.current
-    if _c_complete_header(tokens) or not _c_complete(tokens, builder.rules):
+    if _c_complete_header(tokens):
+        return False
+    if not (_c_complete(tokens, builder.rules) or _c_function_header(tokens, builder.rules)
+            or [token.text for token in tokens] == ["return"]):
         return False
     if builder.blocks:  # enum constants need no ';' before the '}'
         enclosing = builder.statements[builder.blocks[-1]]
-        if enclosing.keyword == "enum":
+        if _is_enum_header(enclosing):
             return False
     return True
