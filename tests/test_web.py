@@ -110,6 +110,8 @@ def test_windows_file_with_crlf_and_folders_in_the_name():
         ({"mode": "file", "filename": "x.png",
           "content_base64": base64.b64encode(b"\x89PNG\r\n\x1a\n\x00\x00").decode()}, 422, "binary"),
         ({"mode": "file", "filename": "x.py", "content_base64": "@@not base64@@"}, 400, "base64"),
+        ({"mode": "file", "filename": "app.js",
+          "content_base64": base64.b64encode(b"let x = 5;").decode()}, 422, "not supported"),
         ({"mode": "line", "code": "x", "language": "cobol"}, 400, "Unknown language"),
         ({"mode": "voice", "code": "x"}, 400, "mode"),
         ({"mode": "line", "code": 42}, 400, "text"),

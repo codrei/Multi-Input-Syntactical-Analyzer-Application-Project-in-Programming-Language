@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import PurePath
 
 from .profiles import PROFILES, LanguageProfile, get_profile
-from .source import Source
+from .source import InputError, Source
 
 #: File extension -> language id.
 EXTENSIONS = {
@@ -29,6 +29,14 @@ EXTENSIONS = {
 }
 
 DEFAULT_LANGUAGE = "python"
+
+#: Extensions of languages SyntaxLens does not check.  Guessing would give false alarms
+#: (JavaScript looks like Java), so these files get a clear message instead.
+UNSUPPORTED = {
+    ".js": "JavaScript", ".mjs": "JavaScript", ".jsx": "JavaScript", ".ts": "TypeScript",
+    ".tsx": "TypeScript", ".go": "Go", ".kt": "Kotlin", ".rs": "Rust", ".rb": "Ruby",
+    ".php": "PHP", ".swift": "Swift", ".html": "HTML", ".css": "CSS",
+}
 
 #: A match counts at most this many times, so one very repetitive feature
 #: (hundreds of lines ending in ";") cannot outweigh everything else.
@@ -132,6 +140,11 @@ def detect_language(source: Source, requested: str = "auto") -> Detection:
         return Detection(get_profile(requested), "selected", "selected by the user")
 
     extension = PurePath(source.name).suffix.lower()
+    if extension in UNSUPPORTED:
+        raise InputError(
+            f"{UNSUPPORTED[extension]} ({extension}) is not supported. SyntaxLens checks Python, Java, "
+            "C, C++ and C#. To check the code anyway, choose one of those languages."
+        )
     if extension in EXTENSIONS:
         profile = get_profile(EXTENSIONS[extension])
         return Detection(profile, "extension", f"auto-detected from the {extension} extension")

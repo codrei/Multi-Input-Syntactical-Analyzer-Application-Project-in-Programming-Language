@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from syntaxlens.detect import detect_language
-from syntaxlens.source import from_file, from_text
+from syntaxlens.source import InputError, from_file, from_text
 
 SAMPLES = Path(__file__).parent.parent / "samples"
 
@@ -55,3 +55,11 @@ def test_txt_file_is_scored_by_content(tmp_path):
 def test_unknown_language_is_rejected():
     with pytest.raises(ValueError, match="Unsupported language"):
         detect("x = 1", requested="cobol")
+
+
+@pytest.mark.parametrize("name", ["app.js", "main.ts", "server.go"])
+def test_an_unsupported_language_gets_a_clear_message(name):
+    source = from_text("let x = 5;\n", name=name)
+    with pytest.raises(InputError, match="is not supported"):
+        detect_language(source)
+    assert detect_language(source, "java").profile.key == "java"   # the user may still choose one

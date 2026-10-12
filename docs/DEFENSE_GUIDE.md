@@ -64,7 +64,7 @@ specification's questions plus their own walkthrough (question 8).
 | Languages | 5: Python, Java, C, C++, C# |
 | Spec Example 1 | PASSED, exactly **14 tokens** |
 | Spec Example 2 | exactly **3 errors** (lines 2, 3, 4); Python's own parser finds only 1 |
-| Tests | **606**, on Windows and Linux, Python 3.10–3.14, on every push |
+| Tests | **610**, on Windows and Linux, Python 3.10–3.14, on every push |
 | False alarms | **0** on 19 realistic valid programs |
 | Catch rate | **98.3%** of 1,601 planted mistakes reported on the right line |
 | Speed | 10,000 lines in under half a second |
@@ -81,7 +81,9 @@ Use the web app. Say one sentence before each step: what you are about to show.
    → PASSED: a `+` before a value is a sign, not an error (Gabriel explains why).
 2. **Mode 2, Code Block.** *Load a sample* → **Spec Example 2 - three errors** → Analyze.
    → Exactly the specification's three errors. Open the **Report** tab, choose
-   **Classic (spec format)**: it matches the specification word for word.
+   **Classic (spec format)**: it matches the specification line for line. The one
+   difference is on purpose: the *Target Syntax Rule* line names the language that was
+   detected ("Python") instead of the spec's "Python / C-Style Hybrid".
    Load **Spec Example 1** → PASSED, *Total Tokens Parsed: 14*.
 3. **Mode 3, Upload File.** Drag `samples/ErrorsDemo.java` (or `samples/errors_demo.c`)
    onto the box. → 10 errors. Click an error: the editor jumps to its line.
@@ -255,6 +257,9 @@ E406). In C and C++ it is legal, so it is only a warning (W406). That is the
 > Nothing crashes: the command line prints the message and exits with code 2, and
 > the web app shows it in a red box.
 
+**Also:** a JavaScript, TypeScript or Go file gets "... is not supported. SyntaxLens checks
+Python, Java, C, C++ and C#" instead of a wrong guess.
+
 **Show:** [`from_bytes()`](../syntaxlens/source.py#L101),
 [`_decode()`](../syntaxlens/source.py#L127),
 [`_mostly_control_characters()`](../syntaxlens/source.py#L154),
@@ -349,6 +354,6 @@ To run the tests during the defense: `py -m pip install -e ".[dev]"` once, then
 | How do you check Python indentation? | A stack of indentation levels, the same method Python uses: deeper than expected is E701 (unexpected indent), a header with no indented block is E702. |
 | How do you check control headers? | A small grammar for each: `if` needs a condition and `:` (Python) or `( )` (C family); `for i range(10):` is missing `in` (E503); `for (i = 0, i < 5, i++)` has commas instead of `;`. |
 | What is the error rate? | Measured: 98.3% of 1,601 planted mistakes are reported on the right line, and there are 0 false alarms on 19 valid programs. |
-| How do you know it all works? | 606 automated tests run on Windows and Linux with five Python versions on every push to GitHub. Both specification examples are reproduced word for word. |
+| How do you know it all works? | 610 automated tests run on Windows and Linux with five Python versions on every push to GitHub. Both specification examples are reproduced line for line (only the *Target Syntax Rule* line names the detected language). |
 | What are its limits? | It checks **syntax, not meaning**: an undefined variable or a wrong type is not reported. It is not a full compiler grammar, so a few rare constructs are not understood: C# LINQ queries (`from x in xs select x`) and `switch` expressions, statements inside Java lambda bodies (not checked one by one), and C macros (not expanded). Our rule is: when unsure, do not flag, because a false alarm is worse than a missed error. |
 | What would you improve next? | A full grammar for each language, JavaScript support, and checking statements inside lambdas. |

@@ -283,7 +283,7 @@ py -m pip install -e ".[dev]"
 py -m pytest
 ```
 
-606 automated tests run on Windows and Linux with Python 3.10–3.14 on every push:
+610 automated tests run on Windows and Linux with Python 3.10–3.14 on every push:
 
 - **Specification examples:** both example reports are reproduced exactly.
 - **Every check:** at least one test per error type, in every language.
