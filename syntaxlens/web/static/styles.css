@@ -56,6 +56,8 @@ body {
 
 h1, h2, h3 { margin: 0; line-height: 1.25; }
 code, kbd, pre, .code-input { font-family: var(--mono); }
+/* Show code exactly as typed: Cascadia Code would draw '<<' as one '≪' symbol. */
+code, kbd, pre, .code-input, .CodeMirror, .table td.code { font-variant-ligatures: none; }
 kbd {
   font-size: 12px; padding: 1px 6px; border: 1px solid var(--border);
   border-bottom-width: 2px; border-radius: 5px; background: var(--panel-2);

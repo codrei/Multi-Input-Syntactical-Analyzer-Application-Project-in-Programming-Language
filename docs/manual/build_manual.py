@@ -218,8 +218,8 @@ def build() -> Path:
         "(or Ctrl+Enter). The *Load a sample* menu offers the specification's examples and one demo "
         "file per language. *Analyze as I type* re-checks the code while you edit.",
         "**Mode 3, Upload File:** drag a file onto the box, or click it to choose one (.py, .java, .c, "
-        ".cpp, .h, .cs, .txt; up to 2 MB). Empty, binary (e.g. images) and oversized files are refused "
-        "with a message.",
+        ".cpp, .h, .cs, .txt; up to 2 MB). Empty, binary (e.g. images) and oversized files, and files "
+        "in other languages (e.g. .js), are refused with a message.",
     ], style="List Number")
     para(doc, "The results show a PASSED / FAILED banner, counts, and bar charts of errors per check "
               "and tokens per category. Errors are marked in the code with a red line, a dot in the "
@@ -356,8 +356,9 @@ def build() -> Path:
     # ---- 7
     heading(doc, "7. Testing")
     bullets(doc, [
-        "**606 automated tests** run on Windows and Linux with Python 3.10 to 3.14 on every change.",
-        "Both example reports of the specification are reproduced exactly, word for word.",
+        "**610 automated tests** run on Windows and Linux with Python 3.10 to 3.14 on every change.",
+        "Both example reports of the specification are reproduced line for line; only the "
+        "*Target Syntax Rule* line differs, because it names the detected language.",
         "**No false alarms:** 19 realistic valid programs in the five languages must give zero "
         "findings; the Python, Java, C and C++ ones are also checked by the real compilers "
         "(CPython, javac, gcc, g++).",

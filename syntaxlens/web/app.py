@@ -118,9 +118,9 @@ def _analyze(environ) -> dict:
             raise HttpError("400 Bad Request", "'mode' must be 'line', 'block' or 'file'.")
         if source.is_blank:
             raise InputError(f"{source.name} is empty: there is no code to analyze.")
+        result = analyze(source, language)
     except InputError as error:
         raise HttpError("422 Unprocessable Content", str(error)) from error
-    result = analyze(source, language)
     payload = to_dict(result)
     payload["mode"] = mode
     payload["report"] = {style: format_report(result, style) for style in ("detailed", "classic")}
