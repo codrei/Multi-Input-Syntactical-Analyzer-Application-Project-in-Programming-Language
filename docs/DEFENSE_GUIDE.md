@@ -4,6 +4,8 @@
 Every member must answer technical questions about the code. The panel may ask the
 questions from section 6 of the specification; all of them are answered below.
 
+Who says and demonstrates what, step by step: [PRESENTATION_PLAN.md](PRESENTATION_PLAN.md).
+
 How to use this guide:
 
 1. Read section 1 to see which part you present.
