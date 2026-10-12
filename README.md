@@ -19,7 +19,7 @@ own computer without internet (see [the web app](#the-web-app)).
 > supporting all three input modes. See the [progress checklist](#progress).
 >
 > **Documents:** [User Manual and System Documentation (PDF)](docs/SyntaxLens_User_Manual.pdf)
-> ([Word](docs/SyntaxLens_User_Manual.docx)) · [Defense guide](docs/DEFENSE_GUIDE.md)
+> ([Word](docs/SyntaxLens_User_Manual.docx)) · [Defense guide](docs/DEFENSE_GUIDE.md) · [Presentation plan](docs/PRESENTATION_PLAN.md)
 
 ![The SyntaxLens web app showing the specification's Example 2](docs/images/web-app.png)
 
