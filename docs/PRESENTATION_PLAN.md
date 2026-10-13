@@ -15,6 +15,16 @@ Every part below has three things: **what you say**, **what you demonstrate**, a
 | 6 | **Marco** | Error recovery, testing, limits, closing | 1½ min |
 | | **All** | Questions from the panel | rest |
 
+**How this plan earns each part of the grading rubric**
+
+| Rubric criterion | Weight | What earns it | Where |
+|---|---|---|---|
+| Functional correctness | 30% | Show **valid** code passing as well as errors, in all 3 input modes and several languages | Brix, Ariz, Gabriel |
+| Technical logic | 20% | Prove nothing is hard-coded: type new code live and **invite the panel to type their own** | Marco, part 6 |
+| Interface and error handling | 15% | Point at the caret, the **Fix:** line and the clear messages for bad files | Brix |
+| Demonstration quality | 15% | Follow this order and the hand-overs; **show** every claim on screen instead of only saying it | Everyone |
+| Oral explanation | 20% | Purpose, workflow, algorithms, choices (no syntax tree), **limitations**, and your own contribution | Everyone, see [Everyone must know](#everyone-must-know) |
+
 **Rules for the day**
 
 - Whoever is talking also drives the laptop. Before you start your part, press
@@ -38,7 +48,8 @@ Every part below has three things: **what you say**, **what you demonstrate**, a
    `lexer.py`, `structure.py`, `analyzer.py`, `checks/delimiters.py`,
    `profiles/cfamily.py`, `expressions.py`, `profiles/rules.py`, `source.py`.
 4. Open a Command Prompt in the project folder.
-5. Put `empty.txt` (an empty text file) on the Desktop.
+5. Put two files on the Desktop: `empty.txt` (an empty text file) and `hello.js`
+   containing one line, `let x = 5;`.
 6. Turn off sleep and notifications. Plug in the charger. Zoom the browser to 110%
    so the panel can read it.
 
@@ -69,6 +80,23 @@ give it a single line, a block of code, or a file.
 Example 1 = 14 tokens · Example 2 = 3 errors · 610 tests · 0 false alarms on 19
 valid programs · 98.3% of 1,601 planted mistakes caught on the right line ·
 standard library only.
+
+**Why we did not build a syntax tree** (the rubric mentions "tree construction"):
+> A parser that builds a full syntax tree stops at the first error. The spec's
+> Example 2 needs all three errors, so we use a token list, statements, a bracket
+> stack and an operator state machine instead. They can report an error and keep
+> checking the next line.
+
+**Implementation choices:** Python with only the standard library (every part is
+our own code); one `analyze()` function shared by the web app and the command
+line; each language is data (a profile and its rules), not separate code.
+
+**Limitations (say them yourselves; the rubric asks for them):**
+- It checks **syntax, not meaning**: an undefined variable or a wrong type is not reported.
+- A few rare constructs are not understood: C# LINQ queries and `switch`
+  expressions; statements inside Java lambda bodies are not checked one by one;
+  C macros are not expanded.
+- JavaScript and other languages are not supported (a `.js` file gets a clear message).
 
 **Q8 ("What did you personally do? Walk us through your code"):** tell the truth
 about what you wrote, fixed, tested or studied. Then walk through your file in four
@@ -149,14 +177,26 @@ the User Manual's architecture table for a few seconds.
 2. In VS Code, open the explanation at the top of
    [`structure.py`](../syntaxlens/structure.py#L17) ("Recovering from mistakes"),
    then [`filter_cascades()`](../syntaxlens/analyzer.py#L114).
+3. **Panel challenge** (this proves nothing is hard-coded, rubric criterion 2). Go to
+   **Single Line**, set Language to **Auto-detect**, and say:
+   > "Everything so far was prepared. Please give us any line of code, correct or
+   > wrong, and we will analyze it now."
+
+   Type exactly what they say and press Enter. If they decline, type this yourself:
+   - Python, `x = 3; y = 6; print(x + y);` → **PASSED**. Say: "This looks wrong,
+     but Python allows `;` between statements, and real Python runs it and prints 9.
+     Flagging it would be a false alarm."
+   - Then set Language to **Java** and type `int total = x + y` → **missing
+     semicolon** (E301). Say: "In Java the same `;` is required."
 
 **Closing, say:**
 > To make sure it works, we have 610 automated tests that run on Windows and Linux
 > on every change, including both examples from the specification. We also
 > planted 1,601 known mistakes into correct programs, and 98.3% were reported on
 > the exact line. Its limits: it checks syntax, not meaning, so it does not know
-> whether a variable exists, and a few rare constructs like C# LINQ queries are
-> not supported. Thank you. We are ready for your questions.
+> whether a variable exists; a few rare constructs like C# LINQ queries are not
+> supported; and we did not build a full syntax tree, on purpose, because a tree
+> parser stops at the first error. Thank you. We are ready for your questions.
 
 ### Marco: study checklist
 
@@ -204,9 +244,12 @@ and [Q5](DEFENSE_GUIDE.md#q5-what-error-handling-is-in-place-if-a-user-uploads-a
 3. **Mode 3, Upload File.** Click the **Upload File** tab and drag
    `samples\ErrorsDemo.java` from File Explorer onto the box.
    → 10 errors. Click an error card: the editor jumps to that line.
+   Then upload `samples\HelloWorld.java` → **PASSED**. Say: "A correct file passes,
+   so it is not just finding errors everywhere."
 4. **Bad files** (this is Q5, so say it clearly):
    - Upload `docs\images\web-app.png` → "looks like a binary file ... not source code".
    - Upload `empty.txt` from the Desktop → "is empty: there is no code to analyze".
+   - Upload `hello.js` from the Desktop → "JavaScript (.js) is not supported ...".
    > "Nothing crashes. Before analysis, every file is checked: over 2 MB is refused,
    > a file containing a NUL byte or mostly invisible control characters is binary, and
    > an empty file has nothing to analyze."
