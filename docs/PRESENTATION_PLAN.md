@@ -1,5 +1,7 @@
 # SyntaxLens: Presentation Plan for the Four of Us
 
+*Taglish version: [GABAY_TAGLISH.md](GABAY_TAGLISH.md)*
+
 **Defense:** Tuesday, October 13 · about 12 minutes of presentation, then questions.
 Every part below has three things: **what you say**, **what you demonstrate**, and
 **what you must study**. The full answers to the panel's sample questions are in
